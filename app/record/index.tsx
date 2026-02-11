@@ -36,6 +36,7 @@ export default function RecordScreen() {
   const [status, setStatus] = useState(STATUS.IDLE);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [lastRecordedUri, setLastRecordedUri] = useState<string | null>(null);
+  const [lastRecordedAtMs, setLastRecordedAtMs] = useState<number | null>(null);
 
   const pulse = useState(new Animated.Value(1))[0];
 
@@ -103,7 +104,7 @@ export default function RecordScreen() {
     statusRef.current = STATUS.RECORDING;
   };
 
-  const stopRecording = async (): Promise<string | null> => {
+  const stopRecording = async (): Promise<{ uri: string; recordedAtMs: number } | null> => {
     if (statusRef.current !== STATUS.RECORDING) return null;
 
     const elapsed = Math.min(
@@ -128,8 +129,10 @@ export default function RecordScreen() {
       });
       const uri = recording.getURI();
       if (uri) {
+        const recordedAtMs = Date.now();
         setLastRecordedUri(uri);
-        return uri;
+        setLastRecordedAtMs(recordedAtMs);
+        return { uri, recordedAtMs };
       }
     } catch (error) {
       console.warn("[Record] stop failed:", error);
@@ -140,10 +143,12 @@ export default function RecordScreen() {
   const handleRecordPressOut = () => {
     if (statusRef.current !== STATUS.RECORDING) return;
     (async () => {
-      const uri = await stopRecording();
+      const result = await stopRecording();
       router.push({
         pathname: "/record/done",
-        params: uri ? { uri } : undefined,
+        params: result
+          ? { uri: result.uri, recordedAtMs: String(result.recordedAtMs) }
+          : undefined,
       });
     })();
   };
@@ -259,7 +264,12 @@ export default function RecordScreen() {
                     setTab("archive");
                     router.push({
                       pathname: "/record/done",
-                      params: lastRecordedUri ? { uri: lastRecordedUri } : undefined,
+                      params:
+                        lastRecordedUri && lastRecordedAtMs
+                          ? { uri: lastRecordedUri, recordedAtMs: String(lastRecordedAtMs) }
+                          : lastRecordedUri
+                            ? { uri: lastRecordedUri }
+                            : undefined,
                     });
                   }}
                 />
@@ -308,6 +318,12 @@ export default function RecordScreen() {
                   onPress={() => console.log("[Record] onPress")}
                   onPressIn={startRecording}
                   onPressOut={handleRecordPressOut}
+                  pressRetentionOffset={{
+                    top: 10000,
+                    left: 10000,
+                    right: 10000,
+                    bottom: 10000,
+                  }}
                   hitSlop={12}
                 >
                   <Image

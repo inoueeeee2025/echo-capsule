@@ -2,13 +2,18 @@ import { Audio, AVPlaybackStatus } from "expo-av";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Slider from "@react-native-community/slider";
+import { useFonts } from "expo-font";
+import { ZenAntiqueSoft_400Regular } from "@expo-google-fonts/zen-antique-soft";
 import {
   Animated,
+  Easing,
   Image,
   ImageBackground,
+  Modal,
   Pressable,
   SafeAreaView,
   StyleSheet,
+  TextInput,
   Text,
   View,
 } from "react-native";
@@ -33,7 +38,13 @@ function formatMillis(millis: number): string {
 
 export default function RecordDoneScreen() {
   const router = useRouter();
-  const { uri } = useLocalSearchParams<{ uri?: string }>();
+  const { uri, recordedAtMs } = useLocalSearchParams<{
+    uri?: string;
+    recordedAtMs?: string;
+  }>();
+  const [zenAntiqueSoftLoaded] = useFonts({
+    ZenAntiqueSoft_400Regular,
+  });
 
   const soundRef = useRef<Audio.Sound | null>(null);
 
@@ -45,28 +56,36 @@ export default function RecordDoneScreen() {
   const [isSliding, setIsSliding] = useState(false);
   const [sliderMillis, setSliderMillis] = useState(0);
   const [sliderWidth, setSliderWidth] = useState(0);
+  const [isProjectModalVisible, setIsProjectModalVisible] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [savedProjectName, setSavedProjectName] = useState("");
+  const [isSaveComplete, setIsSaveComplete] = useState(false);
+  const saveReveal = useRef(new Animated.Value(0)).current;
 
   const playableUri =
     typeof uri === "string" && uri.length > 0 ? uri : undefined;
   const activeX = useRef(new Animated.Value(0)).current;
 
-  const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
-    if (!status.isLoaded) {
-      setIsLoaded(false);
-      setIsPlaying(false);
-      setPositionMillis(0);
-      setDurationMillis(0);
-      if (!isSliding) setSliderMillis(0);
-      return;
-    }
-    setIsLoaded(true);
-    setIsPlaying(status.isPlaying);
-    setPositionMillis(status.positionMillis ?? 0);
-    setDurationMillis(status.durationMillis ?? 0);
-    if (!isSliding) {
-      setSliderMillis(status.positionMillis ?? 0);
-    }
-  }, [isSliding]);
+  const onPlaybackStatusUpdate = useCallback(
+    (status: AVPlaybackStatus) => {
+      if (!status.isLoaded) {
+        setIsLoaded(false);
+        setIsPlaying(false);
+        setPositionMillis(0);
+        setDurationMillis(0);
+        if (!isSliding) setSliderMillis(0);
+        return;
+      }
+      setIsLoaded(true);
+      setIsPlaying(status.isPlaying);
+      setPositionMillis(status.positionMillis ?? 0);
+      setDurationMillis(status.durationMillis ?? 0);
+      if (!isSliding) {
+        setSliderMillis(status.positionMillis ?? 0);
+      }
+    },
+    [isSliding],
+  );
 
   useEffect(() => {
     Animated.spring(activeX, {
@@ -83,6 +102,22 @@ export default function RecordDoneScreen() {
       playsInSilentModeIOS: true,
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!isSaveComplete) {
+      saveReveal.stopAnimation();
+      saveReveal.setValue(0);
+      return;
+    }
+
+    saveReveal.setValue(0);
+    Animated.timing(saveReveal, {
+      toValue: 1,
+      duration: 520,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [isSaveComplete, saveReveal]);
 
   useEffect(() => {
     let mounted = true;
@@ -173,12 +208,65 @@ export default function RecordDoneScreen() {
   );
 
   const currentSliderValue = isSliding ? sliderMillis : positionMillis;
-  const timeLabel = useMemo(() => formatMillis(currentSliderValue), [currentSliderValue]);
+  const timeLabel = useMemo(
+    () => formatMillis(currentSliderValue),
+    [currentSliderValue],
+  );
   const thumbLeft = useMemo(() => {
     if (sliderWidth <= 0 || durationMillis <= 0) return 0;
     const ratio = Math.min(1, Math.max(0, currentSliderValue / durationMillis));
     return ratio * sliderWidth;
   }, [currentSliderValue, durationMillis, sliderWidth]);
+
+  const deliveryDateText = useMemo(() => {
+    const parsed =
+      typeof recordedAtMs === "string" ? Number(recordedAtMs) : NaN;
+    const baseDate =
+      Number.isFinite(parsed) && parsed > 0 ? new Date(parsed) : new Date();
+    const deliveryDate = new Date(baseDate);
+    deliveryDate.setFullYear(deliveryDate.getFullYear() + 1);
+    return `${deliveryDate.getFullYear()}年${deliveryDate.getMonth() + 1}月${deliveryDate.getDate()}日`;
+  }, [recordedAtMs]);
+
+  const openProjectModal = useCallback(async () => {
+    try {
+      const s = soundRef.current;
+      if (s && isPlaying) {
+        await s.pauseAsync();
+      }
+      setIsPlaying(false);
+    } catch {}
+    setIsProjectModalVisible(true);
+  }, [isPlaying]);
+
+  const saveProjectAndBack = useCallback(async () => {
+    try {
+      const s = soundRef.current;
+      if (s) {
+        await s.stopAsync();
+        await s.unloadAsync();
+        soundRef.current = null;
+      }
+    } catch {}
+    setIsProjectModalVisible(false);
+    router.back();
+  }, [router]);
+
+  const closeProjectModal = useCallback(() => {
+    setIsProjectModalVisible(false);
+  }, []);
+
+  const saveProject = useCallback(() => {
+    const parsed =
+      typeof recordedAtMs === "string" ? Number(recordedAtMs) : NaN;
+    const baseDate =
+      Number.isFinite(parsed) && parsed > 0 ? new Date(parsed) : new Date();
+    const fallbackName = `${baseDate.getFullYear()}/${baseDate.getMonth() + 1}/${baseDate.getDate()}`;
+    const normalized = projectName.trim() || fallbackName;
+    setSavedProjectName(normalized);
+    setIsProjectModalVisible(false);
+    setIsSaveComplete(true);
+  }, [projectName, recordedAtMs]);
 
   return (
     <ImageBackground
@@ -189,145 +277,335 @@ export default function RecordDoneScreen() {
     >
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.container}>
-          <View style={styles.topArea}>
-            <Pressable
-              onPress={() => router.push("/record")}
-              style={styles.backArea}
-            >
-              <Text style={styles.backLabel}>撮り直す</Text>
-              <Text style={styles.backArrow}>←</Text>
-            </Pressable>
+          <View
+            pointerEvents={
+              isProjectModalVisible || isSaveComplete ? "none" : "auto"
+            }
+            style={styles.screenContent}
+          >
+            <View style={styles.topArea}>
+              <Pressable
+                onPress={() => router.push("/record")}
+                style={styles.backArea}
+              >
+                <Text style={styles.backLabel}>撮り直し</Text>
+                <Text style={styles.backArrow}>←</Text>
+              </Pressable>
 
-            <View style={styles.toolbarWrapper}>
-              <View style={styles.toolbarPng}>
-                <Image
-                  source={require("../../assets/images/Switch_base.png")}
-                  style={styles.toolbarBase}
-                  resizeMode="contain"
-                />
-                <Animated.Image
-                  source={require("../../assets/images/Segmented_active.png")}
+              <View style={styles.toolbarWrapper}>
+                <View style={styles.toolbarPng}>
+                  <Image
+                    source={require("../../assets/images/Switch_base.png")}
+                    style={styles.toolbarBase}
+                    resizeMode="contain"
+                  />
+                  <Animated.Image
+                    source={require("../../assets/images/Segmented_active.png")}
+                    style={[
+                      styles.toolbarPill,
+                      { transform: [{ translateX: activeX }] },
+                    ]}
+                    resizeMode="contain"
+                  />
+
+                  <Pressable
+                    style={styles.hitLeft}
+                    onPress={() => {
+                      setSegment("rec");
+                      router.push("/record");
+                    }}
+                  />
+                  <Pressable
+                    style={styles.hitRight}
+                    onPress={() => setSegment("archive")}
+                  />
+
+                  <View style={styles.toolbarTextRow} pointerEvents="none">
+                    <Text
+                      style={[
+                        styles.toolbarText,
+                        styles.toolbarTextRec,
+                        segment === "rec" && styles.toolbarTextOn,
+                      ]}
+                    >
+                      rec
+                    </Text>
+                    <Text
+                      style={[
+                        styles.toolbarText,
+                        styles.toolbarTextArchive,
+                        segment === "archive" && styles.toolbarTextOn,
+                      ]}
+                    >
+                      archive
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <Text style={styles.dateText}>{DISPLAY_DATE}</Text>
+            </View>
+
+            <View style={styles.centerArea}>
+              {false ? (
+                <View style={styles.savedMessageWrap}>
+                  <Text
+                    style={[
+                      styles.savedTitle,
+                      zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
+                    ]}
+                  >
+                    {savedProjectName}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.savedSubText,
+                      zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
+                    ]}
+                  >
+                    を保管しました
+                  </Text>
+                </View>
+              ) : (
+                <View
                   style={[
-                    styles.toolbarPill,
-                    { transform: [{ translateX: activeX }] },
+                    styles.playerGroup,
+                    { marginTop: VOICE_BUTTON_OFFSET_Y },
                   ]}
-                  resizeMode="contain"
-                />
+                >
+                  <Pressable
+                    onPress={togglePlay}
+                    style={[
+                      styles.playerButton,
+                      !canTogglePlayback && styles.disabled,
+                    ]}
+                    disabled={!canTogglePlayback}
+                  >
+                    <Image
+                      source={
+                        isPlaying
+                          ? require("../../assets/images/stopButton.png")
+                          : require("../../assets/images/saiseiButton.png")
+                      }
+                      style={styles.playerImage}
+                      resizeMode="contain"
+                    />
+                  </Pressable>
+                </View>
+              )}
+            </View>
 
-                <Pressable
-                  style={styles.hitLeft}
-                  onPress={() => {
-                    setSegment("rec");
-                    router.push("/record");
-                  }}
-                />
-                <Pressable
-                  style={styles.hitRight}
-                  onPress={() => setSegment("archive")}
-                />
-
-                <View style={styles.toolbarTextRow} pointerEvents="none">
+            <View style={styles.bottomArea}>
+              {false ? (
+                <View style={styles.savedBottomRow}>
+                  <Text style={styles.timeText}>00:00</Text>
                   <Text
                     style={[
-                      styles.toolbarText,
-                      styles.toolbarTextRec,
-                      segment === "rec" && styles.toolbarTextOn,
+                      styles.deliveryText,
+                      zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
                     ]}
                   >
-                    rec
+                    <Text style={styles.deliveryDateText}>
+                      {deliveryDateText}
+                    </Text>
+                    のあなたに届きます。
                   </Text>
-                  <Text
-                    style={[
-                      styles.toolbarText,
-                      styles.toolbarTextArchive,
-                      segment === "archive" && styles.toolbarTextOn,
-                    ]}
+                </View>
+              ) : (
+                <View style={styles.progressRow}>
+                  <Text style={styles.timeText}>{timeLabel}</Text>
+
+                  <View
+                    style={styles.sliderWrap}
+                    onLayout={(e) => setSliderWidth(e.nativeEvent.layout.width)}
                   >
-                    archive
+                    <Slider
+                      value={currentSliderValue}
+                      minimumValue={0}
+                      maximumValue={Math.max(durationMillis, 1)}
+                      onSlidingStart={onSlidingStart}
+                      onValueChange={setSliderMillis}
+                      onSlidingComplete={onSlidingComplete}
+                      minimumTrackTintColor="#a7a2ae"
+                      maximumTrackTintColor="rgba(207, 200, 214, 0.9)"
+                      thumbTintColor="transparent"
+                      thumbImage={TRANSPARENT_THUMB}
+                      disabled={!canControlPlayback}
+                      style={styles.slider}
+                    />
+                    <View
+                      pointerEvents="none"
+                      style={[
+                        styles.customThumb,
+                        {
+                          left: Math.max(
+                            0,
+                            Math.min(sliderWidth - 10, thumbLeft - 5),
+                          ),
+                        },
+                      ]}
+                    />
+                  </View>
+                </View>
+              )}
+
+              <Pressable
+                style={styles.okButton}
+                onPress={isSaveComplete ? saveProjectAndBack : openProjectModal}
+              >
+                <Text style={styles.okText}>O K</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {(isProjectModalVisible || isSaveComplete) && (
+            <View style={styles.dimLayer} />
+          )}
+
+          {isSaveComplete && (
+            <Pressable
+              style={styles.savedOverlayRoot}
+              onPress={saveProjectAndBack}
+            >
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.savedMessageWrap,
+                  {
+                    opacity: saveReveal.interpolate({
+                      inputRange: [0, 0.35, 1],
+                      outputRange: [0, 0, 1],
+                    }),
+                    transform: [
+                      {
+                        translateY: saveReveal.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [18, 0],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <Animated.Text
+                  style={[
+                    styles.savedTitle,
+                    zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
+                    {
+                      opacity: saveReveal.interpolate({
+                        inputRange: [0, 0.2, 0.85],
+                        outputRange: [0, 0, 1],
+                      }),
+                      transform: [
+                        {
+                          translateY: saveReveal.interpolate({
+                            inputRange: [0, 0.2, 1],
+                            outputRange: [24, 24, 0],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                >
+                  {savedProjectName}
+                </Animated.Text>
+                <Animated.Text
+                  style={[
+                    styles.savedSubText,
+                    zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
+                    {
+                      opacity: saveReveal.interpolate({
+                        inputRange: [0, 0.4, 1],
+                        outputRange: [0, 0, 1],
+                      }),
+                      transform: [
+                        {
+                          translateY: saveReveal.interpolate({
+                            inputRange: [0, 0.4, 1],
+                            outputRange: [18, 18, 0],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                >
+                  を保管しました
+                </Animated.Text>
+              </Animated.View>
+
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.savedBottomRow,
+                  {
+                    opacity: saveReveal.interpolate({
+                      inputRange: [0, 0.58, 1],
+                      outputRange: [0, 0, 1],
+                    }),
+                    transform: [
+                      {
+                        translateY: saveReveal.interpolate({
+                          inputRange: [0, 0.58, 1],
+                          outputRange: [14, 14, 0],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.deliveryText,
+                    zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
+                  ]}
+                >
+                  <Text style={styles.deliveryDateText}>
+                    {deliveryDateText}
                   </Text>
+                  のあなたに届きます。
+                </Text>
+              </Animated.View>
+            </Pressable>
+          )}
+
+          <Modal
+            visible={isProjectModalVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={closeProjectModal}
+          >
+            <View style={styles.modalRoot}>
+              <Pressable
+                style={styles.modalBackdropPressArea}
+                onPress={closeProjectModal}
+              />
+              <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>プロジェクト名</Text>
+                <View style={styles.inputWrap}>
+                  <TextInput
+                    value={projectName}
+                    onChangeText={setProjectName}
+                    placeholder="XXXX/XX/XX"
+                    placeholderTextColor="#cbc6ce"
+                    style={styles.modalInput}
+                  />
+                </View>
+
+                <View style={styles.modalActions}>
+                  <Pressable
+                    style={styles.modalButton}
+                    onPress={closeProjectModal}
+                  >
+                    <Text style={styles.cancelText}>キャンセル</Text>
+                  </Pressable>
+                  <View style={styles.modalDivider} />
+                  <Pressable style={styles.modalButton} onPress={saveProject}>
+                    <Text style={styles.saveText}>保存</Text>
+                  </Pressable>
                 </View>
               </View>
             </View>
-
-            <Text style={styles.dateText}>{DISPLAY_DATE}</Text>
-          </View>
-
-          <View style={styles.centerArea}>
-            <View
-              style={[styles.playerGroup, { marginTop: VOICE_BUTTON_OFFSET_Y }]}
-            >
-              <Pressable
-                onPress={togglePlay}
-                style={[
-                  styles.playerButton,
-                  !canTogglePlayback && styles.disabled,
-                ]}
-                disabled={!canTogglePlayback}
-              >
-                <Image
-                  source={
-                    isPlaying
-                      ? require("../../assets/images/stopButton.png")
-                      : require("../../assets/images/saiseiButton.png")
-                  }
-                  style={styles.playerImage}
-                  resizeMode="contain"
-                />
-              </Pressable>
-            </View>
-
-            {/* ちょい戻し/ちょい進め（Sliderの代替） */}
-          </View>
-
-          <View style={styles.bottomArea}>
-            <View style={styles.progressRow}>
-              <Text style={styles.timeText}>{timeLabel}</Text>
-
-              <View
-                style={styles.sliderWrap}
-                onLayout={(e) => setSliderWidth(e.nativeEvent.layout.width)}
-              >
-                <Slider
-                  value={currentSliderValue}
-                  minimumValue={0}
-                  maximumValue={Math.max(durationMillis, 1)}
-                  onSlidingStart={onSlidingStart}
-                  onValueChange={setSliderMillis}
-                  onSlidingComplete={onSlidingComplete}
-                  minimumTrackTintColor="#a7a2ae"
-                  maximumTrackTintColor="rgba(207, 200, 214, 0.9)"
-                  thumbTintColor="transparent"
-                  thumbImage={TRANSPARENT_THUMB}
-                  disabled={!canControlPlayback}
-                  style={styles.slider}
-                />
-                <View
-                  pointerEvents="none"
-                  style={[
-                    styles.customThumb,
-                    { left: Math.max(0, Math.min(sliderWidth - 10, thumbLeft - 5)) },
-                  ]}
-                />
-              </View>
-            </View>
-
-            <Pressable
-              style={styles.okButton}
-              onPress={async () => {
-                try {
-                  const s = soundRef.current;
-                  if (s) {
-                    await s.stopAsync();
-                    await s.unloadAsync();
-                    soundRef.current = null;
-                  }
-                } catch {}
-                router.back();
-              }}
-            >
-              <Text style={styles.okText}>O K</Text>
-            </Pressable>
-          </View>
+          </Modal>
         </View>
       </SafeAreaView>
     </ImageBackground>
@@ -341,6 +619,11 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     paddingHorizontal: 24,
+  },
+  screenContent: {
+    flex: 1,
+    width: "100%",
+    alignItems: "center",
   },
   topArea: { width: "100%", alignItems: "center", paddingTop: 26 },
   backArea: {
@@ -456,6 +739,35 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  savedOverlayRoot: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 50,
+    elevation: 50,
+  },
+  savedMessageWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 5,
+    zIndex: 51,
+    elevation: 51,
+  },
+  savedTitle: {
+    color: "#17171a",
+    fontSize: 36,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
+  savedSubText: {
+    marginTop: 40,
+    color: "#17171a",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  saveCompleteZenFont: {
+    fontFamily: "ZenAntiqueSoft_400Regular",
+  },
   playerButton: {
     width: 176,
     height: 176,
@@ -483,7 +795,31 @@ const styles = StyleSheet.create({
 
   bottomArea: { width: "100%", paddingBottom: 70 },
   progressRow: { flexDirection: "row", alignItems: "center", marginBottom: 60 },
-  timeText: { width: 42, fontSize: 7.5, color: "#9a95a2", letterSpacing: 0.8, marginLeft: 40 },
+  savedBottomRow: {
+    position: "absolute",
+    bottom: 175,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 51,
+    elevation: 51,
+  },
+  timeText: {
+    width: 42,
+    fontSize: 7.5,
+    color: "#9a95a2",
+    letterSpacing: 0.8,
+    marginLeft: 40,
+  },
+  deliveryText: {
+    color: "#17171a",
+    fontSize: 18,
+    fontWeight: "700",
+    marginLeft: 15,
+  },
+  deliveryDateText: {
+    fontWeight: "900",
+  },
   sliderWrap: {
     width: "60%",
     marginLeft: -3,
@@ -533,5 +869,86 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 12,
     elevation: 6,
+  },
+  dimLayer: {
+    position: "absolute",
+    left: -40,
+    right: -40,
+    top: -120,
+    bottom: -120,
+    backgroundColor: "rgba(209, 209, 209, 0.32)",
+  },
+  modalRoot: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+  modalBackdropPressArea: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalCard: {
+    width: 330,
+    height: 200,
+    borderRadius: 32,
+    backgroundColor: "rgba(132, 133, 139, 0.82)",
+    overflow: "hidden",
+  },
+  modalTitle: {
+    marginTop: 38,
+    textAlign: "center",
+    color: "#f2f2f4",
+    fontSize: 18,
+    fontWeight: "700",
+    letterSpacing: 1.1,
+  },
+  inputWrap: {
+    marginTop: 18,
+    marginHorizontal: 34,
+    marginBottom: 30,
+    borderRadius: 14,
+    backgroundColor: "rgba(201, 201, 206, 0.55)",
+    paddingHorizontal: 18,
+    justifyContent: "center",
+    height: 40,
+    width: 263,
+  },
+  modalInput: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "600",
+    letterSpacing: 0.6,
+  },
+  modalActions: {
+    height: 70,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(245, 245, 248, 0.68)",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  modalButton: {
+    flex: 1,
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalDivider: {
+    width: 1,
+    height: "100%",
+    backgroundColor: "rgba(245, 245, 248, 0.68)",
+  },
+  cancelText: {
+    color: "rgb(237, 7, 7)",
+    fontSize: 18,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+    marginTop: -15,
+  },
+  saveText: {
+    color: "#f4f4f6",
+    fontSize: 18,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+    marginTop: -15,
   },
 });
