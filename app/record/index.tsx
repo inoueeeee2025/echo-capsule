@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "expo-router";
+import { Audio } from "expo-av";
 import {
   Animated,
   Image,
@@ -34,11 +35,13 @@ export default function RecordScreen() {
   const router = useRouter();
   const [status, setStatus] = useState(STATUS.IDLE);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [lastRecordedUri, setLastRecordedUri] = useState<string | null>(null);
 
   const pulse = useState(new Animated.Value(1))[0];
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingStartRef = useRef(0);
+  const recordingRef = useRef<Audio.Recording | null>(null);
 
   const statusRef = useRef(status);
   useEffect(() => {
@@ -69,10 +72,30 @@ export default function RecordScreen() {
     }).start();
   }, [tab, activeX]);
 
-  const startRecording = () => {
+  const startRecording = async () => {
     if (statusRef.current === STATUS.RECORDING) return;
 
-    console.log("[Record] start");
+    try {
+      const { granted } = await Audio.requestPermissionsAsync();
+      if (!granted) {
+        console.warn("[Record] mic permission denied");
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const recording = new Audio.Recording();
+      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await recording.startAsync();
+      recordingRef.current = recording;
+    } catch (error) {
+      console.warn("[Record] start failed:", error);
+      return;
+    }
+
     clearTimer();
     recordingStartRef.current = Date.now();
     setElapsedMs(0);
@@ -80,10 +103,9 @@ export default function RecordScreen() {
     statusRef.current = STATUS.RECORDING;
   };
 
-  const stopRecording = () => {
-    if (statusRef.current !== STATUS.RECORDING) return;
+  const stopRecording = async (): Promise<string | null> => {
+    if (statusRef.current !== STATUS.RECORDING) return null;
 
-    console.log("[Record] stop");
     const elapsed = Math.min(
       Date.now() - recordingStartRef.current,
       MAX_RECORDING_MS,
@@ -92,12 +114,38 @@ export default function RecordScreen() {
     clearTimer();
     setStatus(STATUS.RECORDED);
     statusRef.current = STATUS.RECORDED;
+
+    const recording = recordingRef.current;
+    recordingRef.current = null;
+
+    if (!recording) return null;
+
+    try {
+      await recording.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      });
+      const uri = recording.getURI();
+      if (uri) {
+        setLastRecordedUri(uri);
+        return uri;
+      }
+    } catch (error) {
+      console.warn("[Record] stop failed:", error);
+    }
+    return null;
   };
 
   const handleRecordPressOut = () => {
     if (statusRef.current !== STATUS.RECORDING) return;
-    stopRecording();
-    router.push("/record/done");
+    (async () => {
+      const uri = await stopRecording();
+      router.push({
+        pathname: "/record/done",
+        params: uri ? { uri } : undefined,
+      });
+    })();
   };
 
   useEffect(() => {
@@ -151,7 +199,16 @@ export default function RecordScreen() {
     return () => clearTimer();
   }, [isRecording]);
 
-  useEffect(() => () => clearTimer(), []);
+  useEffect(() => {
+    return () => {
+      clearTimer();
+      const recording = recordingRef.current;
+      recordingRef.current = null;
+      if (recording) {
+        recording.stopAndUnloadAsync().catch(() => {});
+      }
+    };
+  }, []);
 
   const formatElapsed = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -200,7 +257,10 @@ export default function RecordScreen() {
                   style={styles.hitRight}
                   onPress={() => {
                     setTab("archive");
-                    router.push("/record/done");
+                    router.push({
+                      pathname: "/record/done",
+                      params: lastRecordedUri ? { uri: lastRecordedUri } : undefined,
+                    });
                   }}
                 />
 

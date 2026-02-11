@@ -1,6 +1,7 @@
 import { Audio, AVPlaybackStatus } from "expo-av";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Slider from "@react-native-community/slider";
 import {
   Animated,
   Image,
@@ -13,6 +14,9 @@ import {
 } from "react-native";
 
 const DISPLAY_DATE = "2026/1/31 Sat";
+const TRANSPARENT_THUMB = {
+  uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6p8N8AAAAASUVORK5CYII=",
+};
 const VOICE_BUTTON_SIZE = 140;
 const VOICE_BUTTON_OFFSET_Y = -10;
 const TOOLBAR_WIDTH = 204;
@@ -27,10 +31,6 @@ function formatMillis(millis: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function clamp(n: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, n));
-}
-
 export default function RecordDoneScreen() {
   const router = useRouter();
   const { uri } = useLocalSearchParams<{ uri?: string }>();
@@ -42,6 +42,9 @@ export default function RecordDoneScreen() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionMillis, setPositionMillis] = useState(0);
   const [durationMillis, setDurationMillis] = useState(0);
+  const [isSliding, setIsSliding] = useState(false);
+  const [sliderMillis, setSliderMillis] = useState(0);
+  const [sliderWidth, setSliderWidth] = useState(0);
 
   const playableUri =
     typeof uri === "string" && uri.length > 0 ? uri : undefined;
@@ -53,13 +56,17 @@ export default function RecordDoneScreen() {
       setIsPlaying(false);
       setPositionMillis(0);
       setDurationMillis(0);
+      if (!isSliding) setSliderMillis(0);
       return;
     }
     setIsLoaded(true);
     setIsPlaying(status.isPlaying);
     setPositionMillis(status.positionMillis ?? 0);
     setDurationMillis(status.durationMillis ?? 0);
-  }, []);
+    if (!isSliding) {
+      setSliderMillis(status.positionMillis ?? 0);
+    }
+  }, [isSliding]);
 
   useEffect(() => {
     Animated.spring(activeX, {
@@ -69,6 +76,13 @@ export default function RecordDoneScreen() {
       bounciness: 6,
     }).start();
   }, [activeX, segment]);
+
+  useEffect(() => {
+    Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -139,32 +153,32 @@ export default function RecordDoneScreen() {
     positionMillis,
   ]);
 
-  const seekBy = useCallback(
-    async (deltaMillis: number) => {
+  const onSlidingStart = useCallback(() => {
+    setIsSliding(true);
+  }, []);
+
+  const onSlidingComplete = useCallback(
+    async (value: number) => {
+      setIsSliding(false);
+      setSliderMillis(value);
       const s = soundRef.current;
       if (!s || !canControlPlayback) return;
-      const next = clamp(
-        positionMillis + deltaMillis,
-        0,
-        Math.max(durationMillis, 0),
-      );
       try {
-        await s.setPositionAsync(Math.floor(next));
+        await s.setPositionAsync(value);
       } catch (error) {
         console.warn("Seek failed:", error);
       }
     },
-    [canControlPlayback, durationMillis, positionMillis],
+    [canControlPlayback],
   );
 
-  const timeLabel = useMemo(
-    () => formatMillis(positionMillis),
-    [positionMillis],
-  );
-  const progress = useMemo(() => {
-    if (durationMillis <= 0) return 0;
-    return clamp(positionMillis / durationMillis, 0, 1);
-  }, [durationMillis, positionMillis]);
+  const currentSliderValue = isSliding ? sliderMillis : positionMillis;
+  const timeLabel = useMemo(() => formatMillis(currentSliderValue), [currentSliderValue]);
+  const thumbLeft = useMemo(() => {
+    if (sliderWidth <= 0 || durationMillis <= 0) return 0;
+    const ratio = Math.min(1, Math.max(0, currentSliderValue / durationMillis));
+    return ratio * sliderWidth;
+  }, [currentSliderValue, durationMillis, sliderWidth]);
 
   return (
     <ImageBackground
@@ -269,10 +283,30 @@ export default function RecordDoneScreen() {
             <View style={styles.progressRow}>
               <Text style={styles.timeText}>{timeLabel}</Text>
 
-              {/* Sliderの代わり：進捗バー */}
-              <View style={styles.barTrack}>
+              <View
+                style={styles.sliderWrap}
+                onLayout={(e) => setSliderWidth(e.nativeEvent.layout.width)}
+              >
+                <Slider
+                  value={currentSliderValue}
+                  minimumValue={0}
+                  maximumValue={Math.max(durationMillis, 1)}
+                  onSlidingStart={onSlidingStart}
+                  onValueChange={setSliderMillis}
+                  onSlidingComplete={onSlidingComplete}
+                  minimumTrackTintColor="#a7a2ae"
+                  maximumTrackTintColor="rgba(207, 200, 214, 0.9)"
+                  thumbTintColor="transparent"
+                  thumbImage={TRANSPARENT_THUMB}
+                  disabled={!canControlPlayback}
+                  style={styles.slider}
+                />
                 <View
-                  style={[styles.barFill, { width: `${progress * 100}%` }]}
+                  pointerEvents="none"
+                  style={[
+                    styles.customThumb,
+                    { left: Math.max(0, Math.min(sliderWidth - 10, thumbLeft - 5)) },
+                  ]}
                 />
               </View>
             </View>
@@ -450,22 +484,28 @@ const styles = StyleSheet.create({
   bottomArea: { width: "100%", paddingBottom: 70 },
   progressRow: { flexDirection: "row", alignItems: "center", marginBottom: 60 },
   timeText: { width: 42, fontSize: 7.5, color: "#9a95a2", letterSpacing: 0.8, marginLeft: 40 },
-
-  barTrack: {
-   
+  sliderWrap: {
     width: "60%",
     marginLeft: -3,
+    height: 24,
+    justifyContent: "center",
+  },
+  slider: {
+    width: "100%",
+    height: 24,
+    zIndex: 1,
+  },
+  customThumb: {
+    position: "absolute",
+    top: 7,
+    width: 10,
     height: 10,
     borderRadius: 999,
-    backgroundColor: "rgba(207, 200, 214, 0.9)",
-    overflow: "hidden",
-  },
-  barFill: {
-    height: "100%",
-    width: 20,
-    borderRadius: 999,
-    backgroundColor: "rgba(167, 162, 174, 1)",
-   
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "rgba(188, 182, 194, 0.63)",
+    zIndex: 3,
+    elevation: 3,
   },
 
   okButton: {
