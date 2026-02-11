@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useRouter } from "expo-router";
 import {
   Animated,
   Image,
@@ -16,25 +17,27 @@ const STATUS = {
   RECORDED: "recorded",
 };
 
-const VOICE_BUTTON_SIZE = 150; //ボタンの大きさ
+const VOICE_BUTTON_SIZE = 140; //ボタンの大きさ
 const VOICE_BUTTON_OFFSET_Y = -160; //ボタンの位置調整
 
 const MAX_RECORDING_SECONDS = 300; //録音の最大時間（秒）
 const MAX_RECORDING_MS = MAX_RECORDING_SECONDS * 1000;
 const TIMER_INTERVAL_MS = 100;
 
-const TOOLBAR_WIDTH = 192;
+const TOOLBAR_WIDTH = 204;
 const TOOLBAR_HEIGHT = 44;
+
 const PILL_WIDTH = TOOLBAR_WIDTH / 2; // 96
 
 //ここから実際の画面
 export default function RecordScreen() {
+  const router = useRouter();
   const [status, setStatus] = useState(STATUS.IDLE);
   const [elapsedMs, setElapsedMs] = useState(0);
 
   const pulse = useState(new Animated.Value(1))[0];
 
-  const intervalRef = useRef(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingStartRef = useRef(0);
 
   const statusRef = useRef(status);
@@ -91,8 +94,14 @@ export default function RecordScreen() {
     statusRef.current = STATUS.RECORDED;
   };
 
+  const handleRecordPressOut = () => {
+    if (statusRef.current !== STATUS.RECORDING) return;
+    stopRecording();
+    router.push("/record/done");
+  };
+
   useEffect(() => {
-    let loop;
+    let loop: Animated.CompositeAnimation | null = null;
 
     if (isRecording) {
       loop = Animated.loop(
@@ -144,7 +153,7 @@ export default function RecordScreen() {
 
   useEffect(() => () => clearTimer(), []);
 
-  const formatElapsed = (ms) => {
+  const formatElapsed = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
     const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
     const seconds = String(totalSeconds % 60).padStart(2, "0");
@@ -189,7 +198,10 @@ export default function RecordScreen() {
                 />
                 <Pressable
                   style={styles.hitRight}
-                  onPress={() => setTab("archive")}
+                  onPress={() => {
+                    setTab("archive");
+                    router.push("/record/done");
+                  }}
                 />
 
                 {/* 文字：PNGに文字が無い場合用（文字がPNGに入ってるなら丸ごと消してOK） */}
@@ -197,6 +209,7 @@ export default function RecordScreen() {
                   <Text
                     style={[
                       styles.toolbarText,
+                      styles.toolbarTextRec,
                       tab === "rec" && styles.toolbarTextOn,
                     ]}
                   >
@@ -205,6 +218,7 @@ export default function RecordScreen() {
                   <Text
                     style={[
                       styles.toolbarText,
+                      styles.toolbarTextArchive,
                       tab === "archive" && styles.toolbarTextOn,
                     ]}
                   >
@@ -233,7 +247,7 @@ export default function RecordScreen() {
                   style={styles.buttonPressable}
                   onPress={() => console.log("[Record] onPress")}
                   onPressIn={startRecording}
-                  onPressOut={stopRecording}
+                  onPressOut={handleRecordPressOut}
                   hitSlop={12}
                 >
                   <Image
@@ -251,6 +265,7 @@ export default function RecordScreen() {
               </Text>
             </View>
           </View>
+          <Text style={styles.recordGuideText}>長押しして録音しましょう</Text>
         </View>
       </SafeAreaView>
     </ImageBackground>
@@ -261,10 +276,10 @@ const styles = StyleSheet.create({
   background: { flex: 1 },
   safeArea: { flex: 1 },
   container: { flex: 1, alignItems: "center", paddingHorizontal: 24 },
-  topArea: { width: "100%", alignItems: "center", paddingTop: 14 },
+  topArea: { width: "100%", alignItems: "center", paddingTop: 26 },
   dateText: {
-    marginTop: 34,
-    fontSize: 33,
+    marginTop: 38,
+    fontSize: 15,
     fontWeight: "600",
     color: "#767680",
     letterSpacing: 0.2,
@@ -297,7 +312,15 @@ const styles = StyleSheet.create({
   voiceButton: { width: VOICE_BUTTON_SIZE, height: VOICE_BUTTON_SIZE },
   recordTimeText: {
     marginTop: 20,
-    fontSize: 30,
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#767680",
+    letterSpacing: 0.2,
+  },
+  recordGuideText: {
+    position: "absolute",
+    bottom: 84,
+    fontSize: 36 / 3,
     fontWeight: "600",
     color: "#767680",
     letterSpacing: 0.2,
@@ -314,13 +337,14 @@ const styles = StyleSheet.create({
   toolbarWrapper: {
     width: "100%",
     alignItems: "center",
-    marginTop: 6,
+    marginTop: 30,
   },
 
   toolbarPng: {
     width: TOOLBAR_WIDTH,
     height: TOOLBAR_HEIGHT,
     position: "relative",
+    transform: [{ scale: 0.94 }],
   },
 
   toolbarBase: {
@@ -329,14 +353,28 @@ const styles = StyleSheet.create({
     height: TOOLBAR_HEIGHT,
     left: 0,
     top: 0,
+    opacity: 0.55,
+    tintColor: "rgb(150,140,155)",
+    shadowColor: "#8f7c8f",
+    shadowOpacity: 0.26,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
 
   toolbarPill: {
     position: "absolute",
-    width: PILL_WIDTH,
-    height: TOOLBAR_HEIGHT,
-    left: 0,
-    top: 0,
+    width: PILL_WIDTH - 16,
+    height: TOOLBAR_HEIGHT - 6,
+    left: 8,
+    top: 3,
+    opacity: 0.82,
+    tintColor: "rgba(255, 255, 255, 0.8)",
+    shadowColor: "#ffffff",
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
   },
 
   hitLeft: {
@@ -370,10 +408,18 @@ const styles = StyleSheet.create({
     lineHeight: TOOLBAR_HEIGHT,
     fontSize: 15,
     fontWeight: "600",
-    color: "rgba(60,60,67,0.55)",
+    color: "rgba(255,255,255,0.85)",
+  },
+
+  toolbarTextRec: {
+    transform: [{ translateX: 6 }],
+  },
+
+  toolbarTextArchive: {
+    transform: [{ translateX: -6 }],
   },
 
   toolbarTextOn: {
-    color: "rgba(255,255,255,0.92)",
+    color: "rgba(255,255,255,0.85)",
   },
 });
