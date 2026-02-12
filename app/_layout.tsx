@@ -16,7 +16,7 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       <Stack screenOptions={{ headerShown: false }}>
         {/* Recordを起点にする（タブ無し） */}
-        <Stack.Screen name="record" />
+        <Stack.Screen name="record/rec" />
 
         {/* もしモーダルを使うなら残す */}
         <Stack.Screen name="modal" options={{ presentation: "modal" }} />

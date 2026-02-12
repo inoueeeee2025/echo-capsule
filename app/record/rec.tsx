@@ -1,9 +1,11 @@
+﻿import RecordToolbar from "@/components/RecordToolbar";
+import { ZenAntiqueSoft_400Regular } from "@expo-google-fonts/zen-antique-soft";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import Slider from "@react-native-community/slider";
 import { Audio, AVPlaybackStatus } from "expo-av";
+import { useFonts } from "expo-font";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Slider from "@react-native-community/slider";
-import { useFonts } from "expo-font";
-import { ZenAntiqueSoft_400Regular } from "@expo-google-fonts/zen-antique-soft";
 import {
   Animated,
   Easing,
@@ -11,12 +13,12 @@ import {
   ImageBackground,
   Modal,
   Pressable,
-  SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const STATUS = {
   IDLE: "idle",
@@ -35,17 +37,15 @@ const MAX_RECORDING_SECONDS = 300;
 const MAX_RECORDING_MS = MAX_RECORDING_SECONDS * 1000;
 const TIMER_INTERVAL_MS = 100;
 
-const TOOLBAR_WIDTH = 204;
-const TOOLBAR_HEIGHT = 44;
-const PILL_WIDTH = TOOLBAR_WIDTH / 2;
-
 const VOICE_BUTTON_SIZE = 140;
-const RECORD_BUTTON_OFFSET_Y = -160;
+const RECORD_BUTTON_OFFSET_Y = -100;
 const REVIEW_BUTTON_OFFSET_Y = -10;
 
 const TRANSPARENT_THUMB = {
   uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6p8N8AAAAASUVORK5CYII=",
 };
+const RECORDED_DATE_STORAGE_KEY = "recordedDateKey";
+let didDevBootResetRecordedDateKey = false;
 
 function toDateKey(date: Date): string {
   const y = date.getFullYear();
@@ -76,8 +76,13 @@ export default function RecordDoneScreen() {
     ZenAntiqueSoft_400Regular,
   });
 
-  const [flow, setFlow] = useState<(typeof FLOW)[keyof typeof FLOW]>(FLOW.RECORD);
-  const [recordStatus, setRecordStatus] = useState<(typeof STATUS)[keyof typeof STATUS]>(STATUS.IDLE);
+  const [flow, setFlow] = useState<(typeof FLOW)[keyof typeof FLOW]>(
+    FLOW.RECORD,
+  );
+  const [recordStatus, setRecordStatus] = useState<
+    (typeof STATUS)[keyof typeof STATUS]
+  >(STATUS.IDLE);
+  const [isRecordPressing, setIsRecordPressing] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [lastRecordedUri, setLastRecordedUri] = useState<string | null>(null);
   const [lastRecordedAtMs, setLastRecordedAtMs] = useState<number | null>(null);
@@ -99,18 +104,21 @@ export default function RecordDoneScreen() {
 
   const pulse = useRef(new Animated.Value(1)).current;
   const saveReveal = useRef(new Animated.Value(0)).current;
-  const flowProgress = useRef(new Animated.Value(0)).current;
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingStartRef = useRef(0);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const autoStoppingRef = useRef(false);
+  const isSlidingRef = useRef(false);
 
   const recordStatusRef = useRef(recordStatus);
   useEffect(() => {
     recordStatusRef.current = recordStatus;
   }, [recordStatus]);
+  useEffect(() => {
+    isSlidingRef.current = isSliding;
+  }, [isSliding]);
 
   const isRecording = recordStatus === STATUS.RECORDING;
   const todayKey = useMemo(() => toDateKey(now), [now]);
@@ -138,29 +146,32 @@ export default function RecordDoneScreen() {
     setSliderMillis(0);
   }, []);
 
-  const onPlaybackStatusUpdate = useCallback(
-    (status: AVPlaybackStatus) => {
-      if (!status.isLoaded) {
-        setIsLoaded(false);
-        setIsPlaying(false);
-        setPositionMillis(0);
-        setDurationMillis(0);
-        if (!isSliding) setSliderMillis(0);
-        return;
-      }
-      setIsLoaded(true);
-      setIsPlaying(status.isPlaying);
-      setPositionMillis(status.positionMillis ?? 0);
-      setDurationMillis(status.durationMillis ?? 0);
-      if (!isSliding) setSliderMillis(status.positionMillis ?? 0);
-    },
-    [isSliding],
-  );
+  const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
+    if (!status.isLoaded) {
+      setIsLoaded(false);
+      setIsPlaying(false);
+      setPositionMillis(0);
+      setDurationMillis(0);
+      if (!isSlidingRef.current) setSliderMillis(0);
+      return;
+    }
+    setIsLoaded(true);
+    setIsPlaying(status.isPlaying);
+    setPositionMillis(status.positionMillis ?? 0);
+    setDurationMillis(status.durationMillis ?? 0);
+    if (!isSlidingRef.current) setSliderMillis(status.positionMillis ?? 0);
+  }, []);
 
-  const stopRecording = useCallback(async (): Promise<{ uri: string; recordedAtMs: number } | null> => {
+  const stopRecording = useCallback(async (): Promise<{
+    uri: string;
+    recordedAtMs: number;
+  } | null> => {
     if (recordStatusRef.current !== STATUS.RECORDING) return null;
 
-    const elapsed = Math.min(Date.now() - recordingStartRef.current, MAX_RECORDING_MS);
+    const elapsed = Math.min(
+      Date.now() - recordingStartRef.current,
+      MAX_RECORDING_MS,
+    );
     setElapsedMs(elapsed);
     clearTimer();
     setRecordStatus(STATUS.RECORDED);
@@ -180,9 +191,13 @@ export default function RecordDoneScreen() {
       if (!uri) return null;
 
       const recordedAtMs = Date.now();
+      const recordedDateKey = toDateKey(new Date(recordedAtMs));
       setLastRecordedUri(uri);
       setLastRecordedAtMs(recordedAtMs);
-      setRecordedDateKey(toDateKey(new Date(recordedAtMs)));
+      setRecordedDateKey(recordedDateKey);
+      try {
+        await AsyncStorage.setItem(RECORDED_DATE_STORAGE_KEY, recordedDateKey);
+      } catch {}
       return { uri, recordedAtMs };
     } catch (error) {
       console.warn("[Record] stop failed:", error);
@@ -191,7 +206,14 @@ export default function RecordDoneScreen() {
   }, []);
 
   const startRecording = async () => {
-    if (recordStatusRef.current === STATUS.RECORDING || isLockedToday || flow !== FLOW.RECORD) return;
+    if (
+      recordStatusRef.current === STATUS.RECORDING ||
+      isLockedToday ||
+      flow !== FLOW.RECORD
+    ) {
+      setIsRecordPressing(false);
+      return;
+    }
 
     try {
       const { granted } = await Audio.requestPermissionsAsync();
@@ -204,11 +226,14 @@ export default function RecordDoneScreen() {
       });
 
       const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await recording.prepareToRecordAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY,
+      );
       await recording.startAsync();
       recordingRef.current = recording;
     } catch (error) {
       console.warn("[Record] start failed:", error);
+      setIsRecordPressing(false);
       return;
     }
 
@@ -220,6 +245,7 @@ export default function RecordDoneScreen() {
   };
 
   const handleRecordPressOut = () => {
+    setIsRecordPressing(false);
     if (recordStatusRef.current !== STATUS.RECORDING) return;
 
     (async () => {
@@ -235,6 +261,10 @@ export default function RecordDoneScreen() {
 
   const onSlidingStart = useCallback(() => {
     setIsSliding(true);
+  }, []);
+
+  const onSliderValueChange = useCallback((value: number) => {
+    setSliderMillis(value);
   }, []);
 
   const onSlidingComplete = useCallback(
@@ -295,19 +325,76 @@ export default function RecordDoneScreen() {
   const saveProjectAndBack = useCallback(async () => {
     await unloadSound();
     setIsProjectModalVisible(false);
-    setFlow(FLOW.RECORD);
-    setRecordStatus(STATUS.IDLE);
-    setElapsedMs(0);
     setIsSaveComplete(false);
     setProjectName("");
-    router.back();
+    router.replace("/(tabs)");
   }, [router, unloadSound]);
+
+  const retakeRecording = useCallback(async () => {
+    setIsRecordPressing(false);
+    clearTimer();
+    autoStoppingRef.current = false;
+    const recording = recordingRef.current;
+    recordingRef.current = null;
+    if (recording) {
+      try {
+        await recording.stopAndUnloadAsync();
+      } catch {}
+    }
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      });
+    } catch {}
+
+    await unloadSound();
+    setFlow(FLOW.RECORD);
+    setRecordStatus(STATUS.IDLE);
+    recordStatusRef.current = STATUS.IDLE;
+    setElapsedMs(0);
+    setLastRecordedUri(null);
+    setLastRecordedAtMs(null);
+    setRecordedDateKey(null);
+    try {
+      await AsyncStorage.removeItem(RECORDED_DATE_STORAGE_KEY);
+    } catch {}
+    setProjectName("");
+    setSavedProjectName("");
+    setIsProjectModalVisible(false);
+    setIsSaveComplete(false);
+  }, [unloadSound]);
+
+  useEffect(() => {
+    if (flow === FLOW.RECORD) {
+      setIsRecordPressing(false);
+    }
+  }, [flow]);
 
   useEffect(() => {
     Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
       playsInSilentModeIOS: true,
     }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        if (__DEV__ && !didDevBootResetRecordedDateKey) {
+          didDevBootResetRecordedDateKey = true;
+          await AsyncStorage.removeItem(RECORDED_DATE_STORAGE_KEY);
+        }
+        const saved = await AsyncStorage.getItem(RECORDED_DATE_STORAGE_KEY);
+        if (!mounted || !saved) return;
+        setRecordedDateKey(saved);
+      } catch {}
+    })();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -327,15 +414,6 @@ export default function RecordDoneScreen() {
   }, [isSaveComplete, saveReveal]);
 
   useEffect(() => {
-    Animated.spring(flowProgress, {
-      toValue: flow === FLOW.REVIEW ? 1 : 0,
-      useNativeDriver: true,
-      speed: 18,
-      bounciness: 7,
-    }).start();
-  }, [flow, flowProgress]);
-
-  useEffect(() => {
     let timeout: ReturnType<typeof setTimeout> | null = null;
 
     const schedule = () => {
@@ -343,7 +421,10 @@ export default function RecordDoneScreen() {
       setNow(current);
       const nextMidnight = new Date(current);
       nextMidnight.setHours(24, 0, 0, 0);
-      timeout = setTimeout(schedule, nextMidnight.getTime() - current.getTime() + 10);
+      timeout = setTimeout(
+        schedule,
+        nextMidnight.getTime() - current.getTime() + 10,
+      );
     };
 
     schedule();
@@ -356,6 +437,7 @@ export default function RecordDoneScreen() {
   useEffect(() => {
     if (recordedDateKey && recordedDateKey !== todayKey) {
       setRecordedDateKey(null);
+      AsyncStorage.removeItem(RECORDED_DATE_STORAGE_KEY).catch(() => {});
       setRecordStatus(STATUS.IDLE);
       recordStatusRef.current = STATUS.IDLE;
       setElapsedMs(0);
@@ -463,7 +545,14 @@ export default function RecordDoneScreen() {
   }, [unloadSound]);
 
   const currentSliderValue = isSliding ? sliderMillis : positionMillis;
-  const timeLabel = useMemo(() => formatMillis(currentSliderValue), [currentSliderValue]);
+  const isRecordVisualActive =
+    flow === FLOW.RECORD &&
+    isRecordPressing &&
+    recordStatus === STATUS.RECORDING;
+  const timeLabel = useMemo(
+    () => formatMillis(currentSliderValue),
+    [currentSliderValue],
+  );
   const thumbLeft = useMemo(() => {
     if (sliderWidth <= 0 || durationMillis <= 0) return 0;
     const ratio = Math.min(1, Math.max(0, currentSliderValue / durationMillis));
@@ -477,34 +566,20 @@ export default function RecordDoneScreen() {
     return `${deliveryDate.getFullYear()}年${deliveryDate.getMonth() + 1}月${deliveryDate.getDate()}日`;
   }, [lastRecordedAtMs]);
 
-  const recordViewStyle = {
-    opacity: flowProgress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
-    transform: [
-      {
-        translateX: flowProgress.interpolate({ inputRange: [0, 1], outputRange: [0, -24] }),
-      },
-    ],
-  };
-
-  const reviewViewStyle = {
-    opacity: flowProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }),
-    transform: [
-      {
-        translateX: flowProgress.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }),
-      },
-    ],
-  };
-
   const guideText =
     flow === FLOW.REVIEW
       ? ""
       : isLockedToday
-        ? "本日の録音は完了しています。\n1年後の自分に届くまで、楽しみにしていてね。"
-        : "長押しして録音を開始します。";
+        ? "本日の録音は完了しています。\n1年後のあなたは、どんな場所にいるかな？"
+        : "長押しして録音しましょう";
 
   return (
     <ImageBackground
-      source={require("../../assets/images/home.png")}
+      source={
+        flow !== FLOW.REVIEW && isLockedToday
+          ? require("../../assets/images/norec_background.png")
+          : require("../../assets/images/home.png")
+      }
       resizeMode="cover"
       style={styles.background}
       imageStyle={{ opacity: 1 }}
@@ -512,90 +587,115 @@ export default function RecordDoneScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.container}>
           <View
-            pointerEvents={isProjectModalVisible || isSaveComplete ? "none" : "auto"}
+            pointerEvents={
+              isProjectModalVisible || isSaveComplete ? "none" : "auto"
+            }
             style={styles.screenContent}
           >
             <View style={styles.topArea}>
-              <View style={styles.toolbarWrapper}>
-                <View style={styles.toolbarPng}>
-                  <Image
-                    source={require("../../assets/images/Switch_base.png")}
-                    style={styles.toolbarBase}
-                    resizeMode="contain"
-                  />
-                  <Animated.Image
-                    source={require("../../assets/images/Segmented_active.png")}
-                    style={[styles.toolbarPill, { transform: [{ translateX: 0 }] }]}
-                    resizeMode="contain"
-                  />
-
-                  <Pressable style={styles.hitLeft} onPress={() => {}} />
-                  <Pressable style={styles.hitRight} disabled />
-
-                  <View style={styles.toolbarTextRow} pointerEvents="none">
-                    <Text style={[styles.toolbarText, styles.toolbarTextRec, styles.toolbarTextOn]}>rec</Text>
-                    <Text style={[styles.toolbarText, styles.toolbarTextArchive]}>archive</Text>
-                  </View>
+              {flow === FLOW.REVIEW ? (
+                <View style={styles.retakeTopRow}>
+                  <Pressable
+                    onPress={retakeRecording}
+                    hitSlop={10}
+                    style={styles.retakeTopButton}
+                  >
+                    <Text style={styles.retakeTopLabel}>撮り直す</Text>
+                    <Text style={styles.retakeTopArrow}>←</Text>
+                  </Pressable>
                 </View>
-              </View>
+              ) : null}
+
+              <RecordToolbar />
 
               <Text style={styles.dateText}>{formatDisplayDate(now)}</Text>
             </View>
 
             <View style={styles.centerArea}>
-              <Animated.View
-                pointerEvents={flow === FLOW.RECORD ? "auto" : "none"}
-                style={[styles.flowLayer, recordViewStyle]}
-              >
-                <View style={[styles.recordGroup, { marginTop: RECORD_BUTTON_OFFSET_Y }]}>
-                  <Animated.View
+              {flow === FLOW.RECORD ? (
+                <View style={styles.flowLayer}>
+                  <View
                     style={[
-                      styles.buttonWrap,
-                      isRecording && styles.recordingGlow,
-                      { transform: [{ scale: pulse }] },
+                      styles.recordGroup,
+                      { marginTop: RECORD_BUTTON_OFFSET_Y },
+                    ]}
+                  >
+                    <Animated.View
+                      style={[
+                        styles.buttonWrap,
+                        isRecordVisualActive && styles.recordingGlow,
+                        { transform: [{ scale: pulse }] },
+                      ]}
+                    >
+                      <Pressable
+                        style={styles.buttonPressable}
+                        onPressIn={() => {
+                          setIsRecordPressing(true);
+                          void startRecording();
+                        }}
+                        onPressOut={handleRecordPressOut}
+                        pressRetentionOffset={{
+                          top: 10000,
+                          left: 10000,
+                          right: 10000,
+                          bottom: 10000,
+                        }}
+                        hitSlop={12}
+                        disabled={isLockedToday}
+                      >
+                        <Image
+                          source={
+                            isLockedToday
+                              ? require("../../assets/images/norecButton.png")
+                              : isRecordVisualActive
+                                ? require("../../assets/images/onrec.png")
+                                : require("../../assets/images/home_voiceButton.png")
+                          }
+                          style={[
+                            styles.voiceButton,
+                            isLockedToday && styles.voiceButtonDisabled, // opacityだけ
+                            { tintColor: undefined }, // ★これが超重要：青くならない＆マイク潰れない
+                          ]}
+                          resizeMode="contain"
+                        />
+                      </Pressable>
+                    </Animated.View>
+                    {!isLockedToday ? (
+                      <Text style={styles.recordTimeText}>
+                        {formatMillis(elapsedMs)}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.flowLayer}>
+                  <View
+                    style={[
+                      styles.playerGroup,
+                      { marginTop: REVIEW_BUTTON_OFFSET_Y },
                     ]}
                   >
                     <Pressable
-                      style={styles.buttonPressable}
-                      onPressIn={startRecording}
-                      onPressOut={handleRecordPressOut}
-                      pressRetentionOffset={{ top: 10000, left: 10000, right: 10000, bottom: 10000 }}
-                      hitSlop={12}
-                      disabled={isLockedToday}
+                      onPress={togglePlay}
+                      style={[
+                        styles.playerButton,
+                        !isLoaded && styles.disabled,
+                      ]}
+                      disabled={!isLoaded}
                     >
                       <Image
-                        source={require("../../assets/images/home_voiceButton.png")}
-                        style={[styles.voiceButton, isLockedToday && styles.voiceButtonDisabled]}
+                        source={
+                          isPlaying
+                            ? require("../../assets/images/stopButton.png")
+                            : require("../../assets/images/saiseiButton.png")
+                        }
+                        style={styles.playerImage}
                         resizeMode="contain"
                       />
                     </Pressable>
-                  </Animated.View>
-                  <Text style={styles.recordTimeText}>{formatMillis(elapsedMs)}</Text>
+                  </View>
                 </View>
-              </Animated.View>
-
-              <Animated.View
-                pointerEvents={flow === FLOW.REVIEW ? "auto" : "none"}
-                style={[styles.flowLayer, reviewViewStyle]}
-              >
-                <View style={[styles.playerGroup, { marginTop: REVIEW_BUTTON_OFFSET_Y }]}>
-                  <Pressable
-                    onPress={togglePlay}
-                    style={[styles.playerButton, !isLoaded && styles.disabled]}
-                    disabled={!isLoaded}
-                  >
-                    <Image
-                      source={
-                        isPlaying
-                          ? require("../../assets/images/stopButton.png")
-                          : require("../../assets/images/saiseiButton.png")
-                      }
-                      style={styles.playerImage}
-                      resizeMode="contain"
-                    />
-                  </Pressable>
-                </View>
-              </Animated.View>
+              )}
             </View>
 
             <View style={styles.bottomArea}>
@@ -603,14 +703,18 @@ export default function RecordDoneScreen() {
                 <View style={styles.progressRow}>
                   <Text style={styles.timeText}>{timeLabel}</Text>
 
-                  <View style={styles.sliderWrap} onLayout={(e) => setSliderWidth(e.nativeEvent.layout.width)}>
+                  <View
+                    style={styles.sliderWrap}
+                    onLayout={(e) => setSliderWidth(e.nativeEvent.layout.width)}
+                  >
                     <Slider
                       value={currentSliderValue}
                       minimumValue={0}
                       maximumValue={Math.max(durationMillis, 1)}
                       onSlidingStart={onSlidingStart}
-                      onValueChange={setSliderMillis}
+                      onValueChange={onSliderValueChange}
                       onSlidingComplete={onSlidingComplete}
+                      tapToSeek
                       minimumTrackTintColor="#a7a2ae"
                       maximumTrackTintColor="rgba(207, 200, 214, 0.9)"
                       thumbTintColor="transparent"
@@ -623,7 +727,10 @@ export default function RecordDoneScreen() {
                       style={[
                         styles.customThumb,
                         {
-                          left: Math.max(0, Math.min(sliderWidth - 10, thumbLeft - 5)),
+                          left: Math.max(
+                            0,
+                            Math.min(sliderWidth - 10, thumbLeft - 5),
+                          ),
                         },
                       ]}
                     />
@@ -632,28 +739,46 @@ export default function RecordDoneScreen() {
               ) : null}
 
               {flow === FLOW.REVIEW ? (
-                <Pressable style={styles.okButton} onPress={isSaveComplete ? saveProjectAndBack : openProjectModal}>
+                <Pressable
+                  style={styles.okButton}
+                  onPress={
+                    isSaveComplete ? saveProjectAndBack : openProjectModal
+                  }
+                >
                   <Text style={styles.okText}>O K</Text>
                 </Pressable>
               ) : null}
             </View>
           </View>
 
-          {flow === FLOW.RECORD ? <Text style={styles.recordGuideText}>{guideText}</Text> : null}
+          {flow === FLOW.RECORD ? (
+            <Text style={styles.recordGuideText}>{guideText}</Text>
+          ) : null}
 
-          {(isProjectModalVisible || isSaveComplete) && <View style={styles.dimLayer} />}
+          {(isProjectModalVisible || isSaveComplete) && (
+            <View style={styles.dimLayer} />
+          )}
 
           {isSaveComplete && (
-            <Pressable style={styles.savedOverlayRoot} onPress={saveProjectAndBack}>
+            <Pressable
+              style={styles.savedOverlayRoot}
+              onPress={saveProjectAndBack}
+            >
               <Animated.View
                 pointerEvents="none"
                 style={[
                   styles.savedMessageWrap,
                   {
-                    opacity: saveReveal.interpolate({ inputRange: [0, 0.35, 1], outputRange: [0, 0, 1] }),
+                    opacity: saveReveal.interpolate({
+                      inputRange: [0, 0.35, 1],
+                      outputRange: [0, 0, 1],
+                    }),
                     transform: [
                       {
-                        translateY: saveReveal.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }),
+                        translateY: saveReveal.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [18, 0],
+                        }),
                       },
                     ],
                   },
@@ -664,10 +789,16 @@ export default function RecordDoneScreen() {
                     styles.savedTitle,
                     zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
                     {
-                      opacity: saveReveal.interpolate({ inputRange: [0, 0.2, 0.85], outputRange: [0, 0, 1] }),
+                      opacity: saveReveal.interpolate({
+                        inputRange: [0, 0.2, 0.85],
+                        outputRange: [0, 0, 1],
+                      }),
                       transform: [
                         {
-                          translateY: saveReveal.interpolate({ inputRange: [0, 0.2, 1], outputRange: [24, 24, 0] }),
+                          translateY: saveReveal.interpolate({
+                            inputRange: [0, 0.2, 1],
+                            outputRange: [24, 24, 0],
+                          }),
                         },
                       ],
                     },
@@ -680,10 +811,16 @@ export default function RecordDoneScreen() {
                     styles.savedSubText,
                     zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
                     {
-                      opacity: saveReveal.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 0, 1] }),
+                      opacity: saveReveal.interpolate({
+                        inputRange: [0, 0.4, 1],
+                        outputRange: [0, 0, 1],
+                      }),
                       transform: [
                         {
-                          translateY: saveReveal.interpolate({ inputRange: [0, 0.4, 1], outputRange: [18, 18, 0] }),
+                          translateY: saveReveal.interpolate({
+                            inputRange: [0, 0.4, 1],
+                            outputRange: [18, 18, 0],
+                          }),
                         },
                       ],
                     },
@@ -698,17 +835,30 @@ export default function RecordDoneScreen() {
                 style={[
                   styles.savedBottomRow,
                   {
-                    opacity: saveReveal.interpolate({ inputRange: [0, 0.58, 1], outputRange: [0, 0, 1] }),
+                    opacity: saveReveal.interpolate({
+                      inputRange: [0, 0.58, 1],
+                      outputRange: [0, 0, 1],
+                    }),
                     transform: [
                       {
-                        translateY: saveReveal.interpolate({ inputRange: [0, 0.58, 1], outputRange: [14, 14, 0] }),
+                        translateY: saveReveal.interpolate({
+                          inputRange: [0, 0.58, 1],
+                          outputRange: [14, 14, 0],
+                        }),
                       },
                     ],
                   },
                 ]}
               >
-                <Text style={[styles.deliveryText, zenAntiqueSoftLoaded && styles.saveCompleteZenFont]}>
-                  <Text style={styles.deliveryDateText}>{deliveryDateText}</Text>
+                <Text
+                  style={[
+                    styles.deliveryText,
+                    zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
+                  ]}
+                >
+                  <Text style={styles.deliveryDateText}>
+                    {deliveryDateText}
+                  </Text>
                   {" のあなたに届きます"}
                 </Text>
               </Animated.View>
@@ -722,7 +872,10 @@ export default function RecordDoneScreen() {
             onRequestClose={closeProjectModal}
           >
             <View style={styles.modalRoot}>
-              <Pressable style={styles.modalBackdropPressArea} onPress={closeProjectModal} />
+              <Pressable
+                style={styles.modalBackdropPressArea}
+                onPress={closeProjectModal}
+              />
               <View style={styles.modalCard}>
                 <Text style={styles.modalTitle}>プロジェクト名</Text>
                 <View style={styles.inputWrap}>
@@ -736,7 +889,10 @@ export default function RecordDoneScreen() {
                 </View>
 
                 <View style={styles.modalActions}>
-                  <Pressable style={styles.modalButton} onPress={closeProjectModal}>
+                  <Pressable
+                    style={styles.modalButton}
+                    onPress={closeProjectModal}
+                  >
                     <Text style={styles.cancelText}>キャンセル</Text>
                   </Pressable>
                   <View style={styles.modalDivider} />
@@ -767,79 +923,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   topArea: { width: "100%", alignItems: "center", paddingTop: 26 },
-
-  toolbarWrapper: {
-    width: "100%",
-    alignItems: "center",
-    marginTop: 30,
-  },
-  toolbarPng: {
-    width: TOOLBAR_WIDTH,
-    height: TOOLBAR_HEIGHT,
-    position: "relative",
-    transform: [{ scale: 0.94 }],
-  },
-  toolbarBase: {
-    position: "absolute",
-    width: TOOLBAR_WIDTH,
-    height: TOOLBAR_HEIGHT,
-    left: 0,
-    top: 0,
-    opacity: 0.55,
-    tintColor: "rgb(150,140,155)",
-    shadowColor: "#8f7c8f",
-    shadowOpacity: 0.26,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
-  },
-  toolbarPill: {
-    position: "absolute",
-    width: PILL_WIDTH - 16,
-    height: TOOLBAR_HEIGHT - 6,
-    left: 8,
-    top: 3,
-    opacity: 0.82,
-    tintColor: "rgba(255, 255, 255, 0.8)",
-    shadowColor: "#ffffff",
-    shadowOpacity: 0.18,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
-  hitLeft: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    width: PILL_WIDTH,
-    height: TOOLBAR_HEIGHT,
-  },
-  hitRight: {
-    position: "absolute",
-    left: PILL_WIDTH,
-    top: 0,
-    width: PILL_WIDTH,
-    height: TOOLBAR_HEIGHT,
-  },
-  toolbarTextRow: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    width: TOOLBAR_WIDTH,
-    height: TOOLBAR_HEIGHT,
-    flexDirection: "row",
-  },
-  toolbarText: {
-    width: PILL_WIDTH,
-    textAlign: "center",
-    lineHeight: TOOLBAR_HEIGHT,
-    fontSize: 15,
-    fontWeight: "600",
-    color: "rgba(255,255,255,0.85)",
-  },
-  toolbarTextRec: { transform: [{ translateX: 6 }] },
-  toolbarTextArchive: { transform: [{ translateX: -6 }] },
-  toolbarTextOn: { color: "rgba(255,255,255,0.85)" },
 
   dateText: {
     marginTop: 38,
@@ -880,7 +963,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   voiceButton: { width: VOICE_BUTTON_SIZE, height: VOICE_BUTTON_SIZE },
-  voiceButtonDisabled: { tintColor: "#b8b8bc", opacity: 0.9 },
+  voiceButtonDisabled: { opacity: 0.9 },
   recordTimeText: {
     marginTop: 20,
     fontSize: 12,
@@ -943,6 +1026,35 @@ const styles = StyleSheet.create({
     borderColor: "rgba(188, 182, 194, 0.63)",
     zIndex: 3,
     elevation: 3,
+  },
+
+  retakeTopRow: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    alignItems: "flex-start",
+    zIndex: 20,
+    elevation: 20,
+  },
+  retakeTopButton: {
+    width: 62,
+    alignItems: "flex-start",
+    paddingVertical: 2,
+  },
+  retakeTopLabel: {
+    color: "#1f1f24",
+    fontSize: 10,
+    letterSpacing: 0.2,
+    marginBottom: 0,
+    fontWeight: "500",
+  },
+  retakeTopArrow: {
+    color: "#1f1f24",
+    fontSize: 30,
+
+    lineHeight: 30,
+    marginTop: 2,
+    marginLeft: 4,
   },
 
   okButton: {
