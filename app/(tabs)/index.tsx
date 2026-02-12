@@ -1,3 +1,3 @@
-import RecordScreen from "../record/index";
+import RecordScreen from "../record/rec";
 
 export default RecordScreen;
