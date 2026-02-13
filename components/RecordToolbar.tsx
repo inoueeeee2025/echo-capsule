@@ -4,10 +4,24 @@ import { Animated, Image, Pressable, StyleSheet, Text, View } from "react-native
 const TOOLBAR_WIDTH = 204;
 const TOOLBAR_HEIGHT = 44;
 const PILL_WIDTH = TOOLBAR_WIDTH / 2;
+const ARCHIVE_PILL_NUDGE_X = -6;
 const REC_LABEL_LEFT = 6.5;
 const ARCHIVE_LABEL_LEFT = PILL_WIDTH - 8;
 
-export default function RecordToolbar() {
+type RecordToolbarProps = {
+  active: "rec" | "archive";
+  onPressRec: () => void;
+  onPressArchive: () => void;
+};
+
+export default function RecordToolbar({
+  active,
+  onPressRec,
+  onPressArchive,
+}: RecordToolbarProps) {
+  const isArchive = active === "archive";
+  const pillTranslateX = isArchive ? PILL_WIDTH - 6 + ARCHIVE_PILL_NUDGE_X : 0;
+
   return (
     <View style={styles.toolbarWrapper}>
       <View style={styles.toolbarPng}>
@@ -18,18 +32,30 @@ export default function RecordToolbar() {
         />
         <Animated.Image
           source={require("../assets/images/Segmented_active.png")}
-          style={[styles.toolbarPill, { transform: [{ translateX: 0 }] }]}
+          style={[styles.toolbarPill, { transform: [{ translateX: pillTranslateX }] }]}
           resizeMode="contain"
         />
 
-        <Pressable style={styles.hitLeft} onPress={() => {}} />
-        <Pressable style={styles.hitRight} disabled />
+        <Pressable style={styles.hitLeft} onPress={onPressRec} />
+        <Pressable style={styles.hitRight} onPress={onPressArchive} />
 
         <View style={styles.toolbarTextRow} pointerEvents="none">
-          <Text style={[styles.toolbarText, styles.toolbarTextRec, styles.toolbarTextOn]}>
+          <Text
+            style={[
+              styles.toolbarText,
+              styles.toolbarTextRec,
+              !isArchive && styles.toolbarTextOn,
+            ]}>
             rec
           </Text>
-          <Text style={[styles.toolbarText, styles.toolbarTextArchive]}>archive</Text>
+          <Text
+            style={[
+              styles.toolbarText,
+              styles.toolbarTextArchive,
+              isArchive && styles.toolbarTextOn,
+            ]}>
+            archive
+          </Text>
         </View>
       </View>
     </View>

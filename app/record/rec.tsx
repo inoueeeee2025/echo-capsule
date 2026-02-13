@@ -1,13 +1,15 @@
 ﻿import RecordToolbar from "@/components/RecordToolbar";
 import { ZenAntiqueSoft_400Regular } from "@expo-google-fonts/zen-antique-soft";
+import ArchiveContent from "@/components/ArchiveContent";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Slider from "@react-native-community/slider";
 import { Audio, AVPlaybackStatus } from "expo-av";
 import { useFonts } from "expo-font";
-import { useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  Dimensions,
   Easing,
   Image,
   ImageBackground,
@@ -36,10 +38,12 @@ const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MAX_RECORDING_SECONDS = 300;
 const MAX_RECORDING_MS = MAX_RECORDING_SECONDS * 1000;
 const TIMER_INTERVAL_MS = 100;
+const SCREEN_WIDTH = Dimensions.get("window").width;
 
 const VOICE_BUTTON_SIZE = 140;
 const RECORD_BUTTON_OFFSET_Y = -100;
 const REVIEW_BUTTON_OFFSET_Y = -10;
+const NOREC_BUTTON_NUDGE_Y = -20;
 
 const TRANSPARENT_THUMB = {
   uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6p8N8AAAAASUVORK5CYII=",
@@ -71,7 +75,6 @@ function formatMillis(millis: number): string {
 }
 
 export default function RecordDoneScreen() {
-  const router = useRouter();
   const [zenAntiqueSoftLoaded] = useFonts({
     ZenAntiqueSoft_400Regular,
   });
@@ -101,9 +104,12 @@ export default function RecordDoneScreen() {
   const [projectName, setProjectName] = useState("");
   const [savedProjectName, setSavedProjectName] = useState("");
   const [isSaveComplete, setIsSaveComplete] = useState(false);
+  const [activeTab, setActiveTab] = useState<"rec" | "archive">("rec");
+  const [slideWidth, setSlideWidth] = useState(SCREEN_WIDTH);
 
   const pulse = useRef(new Animated.Value(1)).current;
   const saveReveal = useRef(new Animated.Value(0)).current;
+  const slideX = useRef(new Animated.Value(0)).current;
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingStartRef = useRef(0);
@@ -318,6 +324,7 @@ export default function RecordDoneScreen() {
     const fallbackName = `${baseDate.getFullYear()}/${baseDate.getMonth() + 1}/${baseDate.getDate()}`;
     const normalized = projectName.trim() || fallbackName;
     setSavedProjectName(normalized);
+    setActiveTab("rec");
     setIsProjectModalVisible(false);
     setIsSaveComplete(true);
   }, [lastRecordedAtMs, projectName]);
@@ -327,8 +334,13 @@ export default function RecordDoneScreen() {
     setIsProjectModalVisible(false);
     setIsSaveComplete(false);
     setProjectName("");
-    router.replace("/(tabs)");
-  }, [router, unloadSound]);
+    setActiveTab("rec");
+    setFlow(FLOW.RECORD);
+    setRecordStatus(STATUS.IDLE);
+    recordStatusRef.current = STATUS.IDLE;
+    setIsRecordPressing(false);
+    setElapsedMs(0);
+  }, [unloadSound]);
 
   const retakeRecording = useCallback(async () => {
     setIsRecordPressing(false);
@@ -370,6 +382,15 @@ export default function RecordDoneScreen() {
       setIsRecordPressing(false);
     }
   }, [flow]);
+
+  useEffect(() => {
+    Animated.timing(slideX, {
+      toValue: activeTab === "rec" ? 0 : -slideWidth,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [activeTab, slideWidth, slideX]);
 
   useEffect(() => {
     Audio.setAudioModeAsync({
@@ -572,11 +593,14 @@ export default function RecordDoneScreen() {
       : isLockedToday
         ? "本日の録音は完了しています。\n1年後のあなたは、どんな場所にいるかな？"
         : "長押しして録音しましょう";
+  const isArchiveTab = activeTab === "archive";
 
   return (
     <ImageBackground
       source={
-        flow !== FLOW.REVIEW && isLockedToday
+        isArchiveTab
+          ? require("../../assets/images/home.png")
+          : flow !== FLOW.REVIEW && isLockedToday
           ? require("../../assets/images/norec_background.png")
           : require("../../assets/images/home.png")
       }
@@ -584,6 +608,35 @@ export default function RecordDoneScreen() {
       style={styles.background}
       imageStyle={{ opacity: 1 }}
     >
+      {isArchiveTab ? (
+        <>
+          <View pointerEvents="none" style={styles.archiveBackgroundTint} />
+          <LinearGradient
+            pointerEvents="none"
+            colors={[
+              "rgba(255, 255, 255, 0.2)",
+              "rgba(255, 255, 255, 0.42)",
+              "rgba(255, 255, 255, 0.2)",
+            ]}
+            locations={[0, 0.5, 1]}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={styles.archiveGradientVertical}
+          />
+          <LinearGradient
+            pointerEvents="none"
+            colors={[
+              "rgba(255, 255, 255, 0.14)",
+              "rgba(255, 255, 255, 0.28)",
+              "rgba(255, 255, 255, 0.14)",
+            ]}
+            locations={[0, 0.5, 1]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={styles.archiveGradientHorizontal}
+          />
+        </>
+      ) : null}
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.container}>
           <View
@@ -606,154 +659,183 @@ export default function RecordDoneScreen() {
                 </View>
               ) : null}
 
-              <RecordToolbar />
-
-              <Text style={styles.dateText}>{formatDisplayDate(now)}</Text>
+              <RecordToolbar
+                active={activeTab}
+                onPressRec={() => setActiveTab("rec")}
+                onPressArchive={() => setActiveTab("archive")}
+              />
             </View>
 
-            <View style={styles.centerArea}>
-              {flow === FLOW.RECORD ? (
-                <View style={styles.flowLayer}>
-                  <View
-                    style={[
-                      styles.recordGroup,
-                      { marginTop: RECORD_BUTTON_OFFSET_Y },
-                    ]}
-                  >
-                    <Animated.View
-                      style={[
-                        styles.buttonWrap,
-                        isRecordVisualActive && styles.recordingGlow,
-                        { transform: [{ scale: pulse }] },
-                      ]}
-                    >
-                      <Pressable
-                        style={styles.buttonPressable}
-                        onPressIn={() => {
-                          setIsRecordPressing(true);
-                          void startRecording();
-                        }}
-                        onPressOut={handleRecordPressOut}
-                        pressRetentionOffset={{
-                          top: 10000,
-                          left: 10000,
-                          right: 10000,
-                          bottom: 10000,
-                        }}
-                        hitSlop={12}
-                        disabled={isLockedToday}
-                      >
-                        <Image
-                          source={
-                            isLockedToday
-                              ? require("../../assets/images/norecButton.png")
-                              : isRecordVisualActive
-                                ? require("../../assets/images/onrec.png")
-                                : require("../../assets/images/home_voiceButton.png")
-                          }
+            <View
+              style={styles.slideViewport}
+              onLayout={(e) => setSlideWidth(e.nativeEvent.layout.width)}
+            >
+              <Animated.View
+                style={[
+                  styles.slideTrack,
+                  { width: slideWidth * 2 },
+                  {
+                    transform: [{ translateX: slideX }],
+                  },
+                ]}
+              >
+                <View style={[styles.slidePane, { width: slideWidth }]}>
+                  <Text style={styles.dateText}>{formatDisplayDate(now)}</Text>
+
+                  <View style={styles.centerArea}>
+                    {flow === FLOW.RECORD ? (
+                      <View style={styles.flowLayer}>
+                        <View
                           style={[
-                            styles.voiceButton,
-                            isLockedToday && styles.voiceButtonDisabled, // opacityだけ
-                            { tintColor: undefined }, // ★これが超重要：青くならない＆マイク潰れない
+                            styles.recordGroup,
+                            { marginTop: RECORD_BUTTON_OFFSET_Y },
                           ]}
-                          resizeMode="contain"
-                        />
+                        >
+                          <Animated.View
+                            style={[
+                              styles.buttonWrap,
+                              isRecordVisualActive && styles.recordingGlow,
+                              { transform: [{ scale: pulse }] },
+                            ]}
+                          >
+                            <Pressable
+                              style={styles.buttonPressable}
+                              onPressIn={() => {
+                                setIsRecordPressing(true);
+                                void startRecording();
+                              }}
+                              onPressOut={handleRecordPressOut}
+                              pressRetentionOffset={{
+                                top: 10000,
+                                left: 10000,
+                                right: 10000,
+                                bottom: 10000,
+                              }}
+                              hitSlop={12}
+                              disabled={isLockedToday}
+                            >
+                              <Image
+                                source={
+                                  isLockedToday
+                                    ? require("../../assets/images/norecButton.png")
+                                    : isRecordVisualActive
+                                      ? require("../../assets/images/onrec.png")
+                                      : require("../../assets/images/home_voiceButton.png")
+                                }
+                                style={[
+                                  styles.voiceButton,
+                                  isLockedToday && styles.voiceButtonDisabled,
+                                  isLockedToday && { transform: [{ translateY: NOREC_BUTTON_NUDGE_Y }] },
+                                  { tintColor: undefined },
+                                ]}
+                                resizeMode="contain"
+                              />
+                            </Pressable>
+                          </Animated.View>
+                          {!isLockedToday ? (
+                            <Text style={styles.recordTimeText}>
+                              {formatMillis(elapsedMs)}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={styles.flowLayer}>
+                        <View
+                          style={[
+                            styles.playerGroup,
+                            { marginTop: REVIEW_BUTTON_OFFSET_Y },
+                          ]}
+                        >
+                          <Pressable
+                            onPress={togglePlay}
+                            style={[
+                              styles.playerButton,
+                              !isLoaded && styles.disabled,
+                            ]}
+                            disabled={!isLoaded}
+                          >
+                            <Image
+                              source={
+                                isPlaying
+                                  ? require("../../assets/images/stopButton.png")
+                                  : require("../../assets/images/saiseiButton.png")
+                              }
+                              style={styles.playerImage}
+                              resizeMode="contain"
+                            />
+                          </Pressable>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.bottomArea}>
+                    {flow === FLOW.REVIEW ? (
+                      <View style={styles.progressRow}>
+                        <Text style={styles.timeText}>{timeLabel}</Text>
+
+                        <View
+                          style={styles.sliderWrap}
+                          onLayout={(e) =>
+                            setSliderWidth(e.nativeEvent.layout.width)
+                          }
+                        >
+                          <Slider
+                            value={currentSliderValue}
+                            minimumValue={0}
+                            maximumValue={Math.max(durationMillis, 1)}
+                            onSlidingStart={onSlidingStart}
+                            onValueChange={onSliderValueChange}
+                            onSlidingComplete={onSlidingComplete}
+                            tapToSeek
+                            minimumTrackTintColor="#a7a2ae"
+                            maximumTrackTintColor="rgba(207, 200, 214, 0.9)"
+                            thumbTintColor="transparent"
+                            thumbImage={TRANSPARENT_THUMB}
+                            disabled={!isLoaded}
+                            style={styles.slider}
+                          />
+                          <View
+                            pointerEvents="none"
+                            style={[
+                              styles.customThumb,
+                              {
+                                left: Math.max(
+                                  0,
+                                  Math.min(sliderWidth - 10, thumbLeft - 5),
+                                ),
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    ) : null}
+
+                    {flow === FLOW.REVIEW ? (
+                      <Pressable
+                        style={styles.okButton}
+                        onPress={
+                          isSaveComplete ? saveProjectAndBack : openProjectModal
+                        }
+                      >
+                        <Text style={styles.okText}>O K</Text>
                       </Pressable>
-                    </Animated.View>
-                    {!isLockedToday ? (
-                      <Text style={styles.recordTimeText}>
-                        {formatMillis(elapsedMs)}
-                      </Text>
                     ) : null}
                   </View>
-                </View>
-              ) : (
-                <View style={styles.flowLayer}>
-                  <View
-                    style={[
-                      styles.playerGroup,
-                      { marginTop: REVIEW_BUTTON_OFFSET_Y },
-                    ]}
-                  >
-                    <Pressable
-                      onPress={togglePlay}
-                      style={[
-                        styles.playerButton,
-                        !isLoaded && styles.disabled,
-                      ]}
-                      disabled={!isLoaded}
-                    >
-                      <Image
-                        source={
-                          isPlaying
-                            ? require("../../assets/images/stopButton.png")
-                            : require("../../assets/images/saiseiButton.png")
-                        }
-                        style={styles.playerImage}
-                        resizeMode="contain"
-                      />
-                    </Pressable>
-                  </View>
-                </View>
-              )}
-            </View>
 
-            <View style={styles.bottomArea}>
-              {flow === FLOW.REVIEW ? (
-                <View style={styles.progressRow}>
-                  <Text style={styles.timeText}>{timeLabel}</Text>
+                  {activeTab === "rec" && flow === FLOW.RECORD ? (
+                    <Text style={styles.recordGuideText}>{guideText}</Text>
+                  ) : null}
 
-                  <View
-                    style={styles.sliderWrap}
-                    onLayout={(e) => setSliderWidth(e.nativeEvent.layout.width)}
-                  >
-                    <Slider
-                      value={currentSliderValue}
-                      minimumValue={0}
-                      maximumValue={Math.max(durationMillis, 1)}
-                      onSlidingStart={onSlidingStart}
-                      onValueChange={onSliderValueChange}
-                      onSlidingComplete={onSlidingComplete}
-                      tapToSeek
-                      minimumTrackTintColor="#a7a2ae"
-                      maximumTrackTintColor="rgba(207, 200, 214, 0.9)"
-                      thumbTintColor="transparent"
-                      thumbImage={TRANSPARENT_THUMB}
-                      disabled={!isLoaded}
-                      style={styles.slider}
-                    />
-                    <View
-                      pointerEvents="none"
-                      style={[
-                        styles.customThumb,
-                        {
-                          left: Math.max(
-                            0,
-                            Math.min(sliderWidth - 10, thumbLeft - 5),
-                          ),
-                        },
-                      ]}
-                    />
-                  </View>
                 </View>
-              ) : null}
 
-              {flow === FLOW.REVIEW ? (
-                <Pressable
-                  style={styles.okButton}
-                  onPress={
-                    isSaveComplete ? saveProjectAndBack : openProjectModal
-                  }
-                >
-                  <Text style={styles.okText}>O K</Text>
-                </Pressable>
-              ) : null}
+                <View style={[styles.slidePane, { width: slideWidth }]}>
+                  <ArchiveContent embedded onPressRec={() => setActiveTab("rec")} />
+                </View>
+              </Animated.View>
             </View>
           </View>
-
-          {flow === FLOW.RECORD ? (
-            <Text style={styles.recordGuideText}>{guideText}</Text>
-          ) : null}
 
           {(isProjectModalVisible || isSaveComplete) && (
             <View style={styles.dimLayer} />
@@ -911,6 +993,16 @@ export default function RecordDoneScreen() {
 
 const styles = StyleSheet.create({
   background: { flex: 1, backgroundColor: "#000" },
+  archiveBackgroundTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(197, 219, 204, 0.42)",
+  },
+  archiveGradientVertical: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  archiveGradientHorizontal: {
+    ...StyleSheet.absoluteFillObject,
+  },
   safeArea: { flex: 1 },
   container: {
     flex: 1,
@@ -923,6 +1015,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   topArea: { width: "100%", alignItems: "center", paddingTop: 26 },
+  slideViewport: {
+    flex: 1,
+    width: "100%",
+    marginLeft: 0,
+    overflow: "hidden",
+  },
+  slideTrack: {
+    flex: 1,
+    flexDirection: "row",
+  },
+  slidePane: {
+    flex: 1,
+    paddingHorizontal: 0,
+  },
 
   dateText: {
     marginTop: 38,
@@ -930,6 +1036,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#767680",
     letterSpacing: 0.2,
+    alignSelf: "center",
   },
   centerArea: {
     flex: 1,
@@ -1082,6 +1189,8 @@ const styles = StyleSheet.create({
   recordGuideText: {
     position: "absolute",
     bottom: 84,
+    left: 0,
+    right: 0,
     textAlign: "center",
     fontSize: 12,
     fontWeight: "600",
