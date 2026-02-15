@@ -37,6 +37,7 @@ const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const MAX_RECORDING_SECONDS = 300;
 const MAX_RECORDING_MS = MAX_RECORDING_SECONDS * 1000;
+const RECORDING_WARNING_MS = 170000; // 02:50
 const TIMER_INTERVAL_MS = 100;
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -570,6 +571,7 @@ export default function RecordDoneScreen() {
     flow === FLOW.RECORD &&
     isRecordPressing &&
     recordStatus === STATUS.RECORDING;
+  const isRecordingWarning = isRecording && elapsedMs >= RECORDING_WARNING_MS;
   const timeLabel = useMemo(
     () => formatMillis(currentSliderValue),
     [currentSliderValue],
@@ -733,7 +735,11 @@ export default function RecordDoneScreen() {
                             </Pressable>
                           </Animated.View>
                           {!isLockedToday ? (
-                            <Text style={styles.recordTimeText}>
+                            <Text
+                              style={[
+                                styles.recordTimeText,
+                                isRecordingWarning && styles.recordTimeTextWarning,
+                              ]}>
                               {formatMillis(elapsedMs)}
                             </Text>
                           ) : null}
@@ -1077,6 +1083,9 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#767680",
     letterSpacing: 0.2,
+  },
+  recordTimeTextWarning: {
+    color: "#d83a3a",
   },
   recordingGlow: {
     shadowColor: "#60a8ec",

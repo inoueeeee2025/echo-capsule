@@ -2,6 +2,7 @@ import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import PlayCircleSvg from "@/assets/images/Play_circle.svg";
 import {
+  Alert,
   Image,
   Modal,
   Pressable,
@@ -79,6 +80,13 @@ function formatDateJP(dateKey: string): string {
   return `${y}/${Number(m)}/${Number(d)}`;
 }
 
+function formatDateJPWithWeekday(dateKey: string): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+  const dayIndex = new Date(y, m - 1, d).getDay();
+  return `${y}/${m}/${d}(${weekdays[dayIndex]})`;
+}
+
 function createCalendarCells(year: number, monthIndex: number): Date[] {
   const firstDay = new Date(year, monthIndex, 1);
   const start = new Date(firstDay);
@@ -97,8 +105,15 @@ export default function ArchiveContent({
   embedded = false,
   onPressRec,
 }: ArchiveContentProps) {
+  const showFullTitle = (title: string) => {
+    Alert.alert("タイトル", title);
+  };
+
   const isSvgReady = typeof PlayCircleSvg !== "number";
   const router = useRouter();
+  const openCassetteScreen = () => {
+    router.push("/cassette");
+  };
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date(2025, 8, 1));
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
   const [searchText, setSearchText] = useState("");
@@ -122,12 +137,7 @@ export default function ArchiveContent({
     );
   }, [monthIndex, year]);
 
-  const visibleBaseList = useMemo(() => {
-    if (selectedDateKey) {
-      return sortedLatest.filter((item) => item.date === selectedDateKey);
-    }
-    return sortedLatest.slice(0, 10);
-  }, [selectedDateKey, sortedLatest]);
+  const visibleBaseList = useMemo(() => sortedLatest.slice(0, 10), [sortedLatest]);
 
   const visibleList = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
@@ -135,9 +145,15 @@ export default function ArchiveContent({
     return visibleBaseList.filter((item) => item.title.toLowerCase().includes(keyword));
   }, [searchText, visibleBaseList]);
 
+  const selectedDateItems = useMemo(() => {
+    if (!selectedDateKey) return [];
+    return sortedLatest.filter((item) => item.date === selectedDateKey);
+  }, [selectedDateKey, sortedLatest]);
+
   const cells = useMemo(() => createCalendarCells(year, monthIndex), [monthIndex, year]);
 
-  const sectionTitle = selectedDateKey ? `${formatDateJP(selectedDateKey)} recordings` : "最新10件";
+  const isSearching = searchText.trim().length > 0;
+  const sectionTitle = isSearching ? "検索結果" : "最新10件";
 
   const moveMonth = (delta: number) => {
     const next = new Date(year, monthIndex + delta, 1);
@@ -145,10 +161,12 @@ export default function ArchiveContent({
   };
 
   const onSelectDay = (date: Date) => {
+    const key = toDateKey(date);
+    const hasRecordingsOnDay = dotDateKeys.has(key);
     if (date.getMonth() !== monthIndex || date.getFullYear() !== year) {
       setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1));
     }
-    setSelectedDateKey(toDateKey(date));
+    setSelectedDateKey(hasRecordingsOnDay ? key : null);
   };
 
   return (
@@ -202,70 +220,119 @@ export default function ArchiveContent({
         />
       </View>
 
-      <View style={styles.calendarCard}>
-        <View style={styles.calendarHeader}>
-          <Pressable style={styles.navArrowWrap} onPress={() => moveMonth(-1)}>
-            <Image
-              source={require("../assets/images/miniArrow.png")}
-              style={styles.miniArrowLeft}
-              resizeMode="contain"
-            />
-          </Pressable>
+      <View
+        style={[
+          styles.calendarStack,
+        ]}>
+        <View style={styles.calendarCard}>
+          <View style={styles.calendarHeader}>
+            <Pressable style={styles.navArrowWrap} onPress={() => moveMonth(-1)}>
+              <Image
+                source={require("../assets/images/miniArrow.png")}
+                style={styles.miniArrowLeft}
+                resizeMode="contain"
+              />
+            </Pressable>
 
-          <Pressable style={styles.dropdownPill} onPress={() => setMonthPickerOpen(true)}>
-            <Text style={styles.dropdownText}>{MONTHS[monthIndex]}</Text>
-            <Image
-              source={require("../assets/images/miniArrow.png")}
-              style={styles.miniArrowDropdown}
-              resizeMode="contain"
-            />
-          </Pressable>
+            <Pressable style={styles.dropdownPill} onPress={() => setMonthPickerOpen(true)}>
+              <Text style={styles.dropdownText}>{MONTHS[monthIndex]}</Text>
+              <Image
+                source={require("../assets/images/miniArrow.png")}
+                style={styles.miniArrowDropdown}
+                resizeMode="contain"
+              />
+            </Pressable>
 
-          <Pressable style={styles.dropdownPill} onPress={() => setYearPickerOpen(true)}>
-            <Text style={styles.dropdownText}>{String(year)}</Text>
-            <Image
-              source={require("../assets/images/miniArrow.png")}
-              style={styles.miniArrowDropdown}
-              resizeMode="contain"
-            />
-          </Pressable>
+            <Pressable style={styles.dropdownPill} onPress={() => setYearPickerOpen(true)}>
+              <Text style={styles.dropdownText}>{String(year)}</Text>
+              <Image
+                source={require("../assets/images/miniArrow.png")}
+                style={styles.miniArrowDropdown}
+                resizeMode="contain"
+              />
+            </Pressable>
 
-          <Pressable style={styles.navArrowWrap} onPress={() => moveMonth(1)}>
-            <Image
-              source={require("../assets/images/miniArrow.png")}
-              style={styles.miniArrowRight}
-              resizeMode="contain"
-            />
-          </Pressable>
+            <Pressable style={styles.navArrowWrap} onPress={() => moveMonth(1)}>
+              <Image
+                source={require("../assets/images/miniArrow.png")}
+                style={styles.miniArrowRight}
+                resizeMode="contain"
+              />
+            </Pressable>
+          </View>
+
+          <View style={styles.weekRow}>
+            {WEEKDAYS.map((w) => (
+              <Text key={w} style={styles.weekText}>
+                {w}
+              </Text>
+            ))}
+          </View>
+
+          <View style={styles.grid}>
+            {cells.map((date) => {
+              const key = toDateKey(date);
+              const inCurrentMonth =
+                date.getMonth() === monthIndex && date.getFullYear() === year;
+              const hasDot = dotDateKeys.has(key);
+              const isSelected = selectedDateKey === key;
+              return (
+                <Pressable key={key} style={styles.dayCell} onPress={() => onSelectDay(date)}>
+                  <View style={[styles.dayNumberWrap, isSelected && styles.daySelected]}>
+                    <Text style={[styles.dayNumber, !inCurrentMonth && styles.dayNumberMuted]}>
+                      {date.getDate()}
+                    </Text>
+                  </View>
+                  <View style={styles.dotArea}>{hasDot ? <View style={styles.dot} /> : null}</View>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
 
-        <View style={styles.weekRow}>
-          {WEEKDAYS.map((w) => (
-            <Text key={w} style={styles.weekText}>
-              {w}
-            </Text>
-          ))}
-        </View>
-
-        <View style={styles.grid}>
-          {cells.map((date) => {
-            const key = toDateKey(date);
-            const inCurrentMonth =
-              date.getMonth() === monthIndex && date.getFullYear() === year;
-            const hasDot = dotDateKeys.has(key);
-            const isSelected = selectedDateKey === key;
-            return (
-              <Pressable key={key} style={styles.dayCell} onPress={() => onSelectDay(date)}>
-                <View style={[styles.dayNumberWrap, isSelected && styles.daySelected]}>
-                  <Text style={[styles.dayNumber, !inCurrentMonth && styles.dayNumberMuted]}>
-                    {date.getDate()}
+        {selectedDateKey && selectedDateItems.length > 0 ? (
+          <>
+            <Pressable
+              style={styles.deliveryModalBackdrop}
+              onPress={() => setSelectedDateKey(null)}
+            />
+            <View style={styles.deliveryModalCard}>
+              <Text style={styles.deliveryModalDate}>{formatDateJPWithWeekday(selectedDateKey)}</Text>
+              <View style={styles.deliveryModalRow}>
+                <Text
+                  style={styles.deliveryModalTitle}
+                  numberOfLines={1}
+                  onLongPress={() => showFullTitle(selectedDateItems[0].title)}>
+                  {selectedDateItems[0].title}
+                </Text>
+                <Text style={styles.deliveryModalDuration}>
+                  {formatDuration(selectedDateItems[0].durationSec)}
+                </Text>
+                <Pressable
+                  style={styles.playButton}
+                  onPress={openCassetteScreen}
+                  hitSlop={6}>
+                  {isSvgReady ? (
+                    <PlayCircleSvg width={18} height={18} />
+                  ) : (
+                    <Text style={styles.playIcon}>{">"}</Text>
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={() => console.log("transcript", selectedDateItems[0].id)}
+                  hitSlop={6}>
+                  <Text
+                    style={[
+                      styles.transcript,
+                      !selectedDateItems[0].hasTranscript && styles.transcriptDisabled,
+                    ]}>
+                    T
                   </Text>
-                </View>
-                <View style={styles.dotArea}>{hasDot ? <View style={styles.dot} /> : null}</View>
-              </Pressable>
-            );
-          })}
-        </View>
+                </Pressable>
+              </View>
+            </View>
+          </>
+        ) : null}
       </View>
 
       <View style={styles.sectionHead}>
@@ -281,14 +348,17 @@ export default function ArchiveContent({
         {visibleList.map((item) => (
           <View key={item.id} style={styles.row}>
             <Text style={styles.duration}>{formatDuration(item.durationSec)}</Text>
-            <Text style={styles.title} numberOfLines={1}>
+            <Text
+              style={styles.title}
+              numberOfLines={1}
+              onLongPress={() => showFullTitle(item.title)}>
               {item.title}
             </Text>
             <Text style={styles.date}>{formatDateJP(item.date)}</Text>
 
             <Pressable
               style={styles.playButton}
-              onPress={() => console.log("play", item.id)}
+              onPress={openCassetteScreen}
               hitSlop={6}>
               {isSvgReady ? (
                 <PlayCircleSvg width={18} height={18} />
@@ -444,6 +514,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingBottom: 8,
   },
+  calendarStack: {
+    position: "relative",
+  },
   calendarHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -549,6 +622,49 @@ const styles = StyleSheet.create({
     height: 5,
     borderRadius: 5,
     backgroundColor: "rgba(163, 165, 167, 0.9)",
+  },
+  deliveryModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 2,
+  },
+  deliveryModalCard: {
+    position: "absolute",
+    left: 22,
+    right: 22,
+    top: 165,
+    zIndex: 3,
+    elevation: 3,
+    borderRadius: 32,
+    borderWidth: 2,
+    borderColor: "rgba(140, 143, 146, 0.5)",
+    backgroundColor: "rgba(247, 247, 248, 0.95)",
+    paddingHorizontal: 22,
+    paddingVertical: 14,
+  },
+  deliveryModalDate: {
+    textAlign: "center",
+    color: "#141618",
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 12,
+  },
+  deliveryModalRow: {
+    minHeight: 40,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+  },
+  deliveryModalTitle: {
+    flex: 1,
+    color: "rgb(22, 24, 26)",
+    fontSize: 14,
+    fontWeight: LIST_TITLE_WEIGHT,
+  },
+  deliveryModalDuration: {
+    width: 62,
+    color: "#8e9092",
+    fontSize: 14,
+    textAlign: "right",
   },
   sectionHead: {
     flexDirection: "row",
@@ -669,4 +785,4 @@ const styles = StyleSheet.create({
     color: "#111315",
     fontWeight: "600",
   },
-});
+})
