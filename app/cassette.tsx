@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -12,28 +12,79 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const WHEEL_SPIN_MS = 4000;
+const WHEEL_SPIN_MS = 6000;
+const LEFT_WHEEL_SIZE = 221;
+const RIGHT_WHEEL_SIZE = 288;
+const DEV_AUTO_PLAY_ON_MOUNT = true;
 
 export default function CassetteScreen() {
   const router = useRouter();
-  const rotate = useRef(new Animated.Value(0)).current;
+  const [isPlaying, setIsPlaying] = useState(DEV_AUTO_PLAY_ON_MOUNT);
+  const rotateProgress = useRef(new Animated.Value(0)).current;
+  const progressRef = useRef(0);
+  const loopRef = useRef<Animated.CompositeAnimation | null>(null);
+
+  // Hardware integration point:
+  // later, call this from hardware play/stop events.
+  const handleHardwarePlaybackChange = useCallback((next: boolean) => {
+    setIsPlaying(next);
+  }, []);
 
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.timing(rotate, {
-        toValue: 1,
-        duration: WHEEL_SPIN_MS,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [rotate]);
+    const id = rotateProgress.addListener(({ value }) => {
+      progressRef.current = ((value % 1) + 1) % 1;
+    });
+    return () => rotateProgress.removeListener(id);
+  }, [rotateProgress]);
 
-  const spin = rotate.interpolate({
+  useEffect(() => {
+    if (isPlaying) {
+      if (loopRef.current) {
+        loopRef.current.stop();
+        loopRef.current = null;
+      }
+      rotateProgress.setValue(progressRef.current);
+      loopRef.current = Animated.loop(
+        Animated.timing(rotateProgress, {
+          toValue: 1,
+          duration: WHEEL_SPIN_MS,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+        { resetBeforeIteration: true },
+      );
+      loopRef.current.start();
+      return;
+    }
+
+    if (loopRef.current) {
+      loopRef.current.stop();
+      loopRef.current = null;
+    }
+    rotateProgress.stopAnimation((value) => {
+      const normalized = ((value % 1) + 1) % 1;
+      progressRef.current = normalized;
+      rotateProgress.setValue(normalized);
+    });
+  }, [isPlaying, rotateProgress, progressRef]);
+
+  useEffect(() => {
+    return () => {
+      if (loopRef.current) {
+        loopRef.current.stop();
+        loopRef.current = null;
+      }
+      rotateProgress.stopAnimation();
+    };
+  }, [rotateProgress]);
+
+  const spin = rotateProgress.interpolate({
     inputRange: [0, 1],
     outputRange: ["0deg", "360deg"],
+  });
+  const reverseSpin = rotateProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "-360deg"],
   });
 
   return (
@@ -43,20 +94,30 @@ export default function CassetteScreen() {
       style={styles.background}>
       <SafeAreaView style={styles.safeArea}>
         <View style={[styles.cassetteArea, styles.cassetteAreaLandscape]}>
-          <Animated.Image
-            source={require("../assets/images/leftwheel.png")}
-            resizeMode="contain"
-            style={[styles.leftWheel, styles.leftWheelLandscape, { transform: [{ rotate: spin }] }]}
-          />
-          <Animated.Image
-            source={require("../assets/images/rightwheel.png")}
-            resizeMode="contain"
-            style={[
-              styles.rightWheel,
-              styles.rightWheelLandscape,
-              { transform: [{ rotate: spin }] },
-            ]}
-          />
+          <View style={[styles.leftWheelSlot, styles.leftWheelSlotLandscape]}>
+            <Animated.Image
+              source={require("../assets/images/leftwheel.png")}
+              resizeMode="contain"
+              style={[
+                styles.wheelImage,
+                {
+                  transform: [{ rotate: reverseSpin }],
+                },
+              ]}
+            />
+          </View>
+          <View style={[styles.rightWheelSlot, styles.rightWheelSlotLandscape]}>
+            <Animated.Image
+              source={require("../assets/images/rightwheel.png")}
+              resizeMode="contain"
+              style={[
+                styles.wheelImage,
+                {
+                  transform: [{ rotate: spin }],
+                },
+              ]}
+            />
+          </View>
           <Image
             source={require("../assets/images/cassetteCover.png")}
             resizeMode="cover"
@@ -92,6 +153,12 @@ export default function CassetteScreen() {
             />
           </Pressable>
         </View>
+        <Pressable
+          onLongPress={() => handleHardwarePlaybackChange(!isPlaying)}
+          delayLongPress={700}
+          style={styles.devPlaybackToggleZone}
+          hitSlop={16}
+        />
 
       </SafeAreaView>
     </ImageBackground>
@@ -113,33 +180,39 @@ const styles = StyleSheet.create({
   cassetteAreaLandscape: {
     justifyContent: "flex-start",
   },
-  leftWheel: {
+  leftWheelSlot: {
     position: "absolute",
     left: "12%",
     top: "19%",
     width: "3%",
     height: "3%",
     zIndex: 2,
+    overflow: "visible",
   },
-  leftWheelLandscape: {
-    left: 100,
-    top: 85,
-    width: 250,
-    height: 250,
+  leftWheelSlotLandscape: {
+    left: 110,
+    top: 90,
+    width: LEFT_WHEEL_SIZE,
+    height: LEFT_WHEEL_SIZE,
   },
-  rightWheel: {
+  rightWheelSlot: {
     position: "absolute",
     right: "12%",
     top: "19%",
     width: "34%",
     height: "34%",
     zIndex: 2,
+    overflow: "visible",
   },
-  rightWheelLandscape: {
+  rightWheelSlotLandscape: {
     right: 70,
     top: 60,
-    width: 300,
-    height: 300,
+    width: RIGHT_WHEEL_SIZE,
+    height: RIGHT_WHEEL_SIZE,
+  },
+  wheelImage: {
+    width: "100%",
+    height: "100%",
   },
   cassetteCover: {
     zIndex: 3,
@@ -186,6 +259,15 @@ const styles = StyleSheet.create({
   bottomButtonImage: {
     width: 60,
     height: 60,
+  },
+  devPlaybackToggleZone: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: 1,
+    height: 1,
+    opacity: 0,
+    zIndex: 99,
   },
 
 

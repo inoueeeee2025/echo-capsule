@@ -624,7 +624,11 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(163, 165, 167, 0.9)",
   },
   deliveryModalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute",
+    left: -2000,
+    right: -2000,
+    top: -2000,
+    bottom: -2000,
     zIndex: 2,
   },
   deliveryModalCard: {

@@ -17,7 +17,10 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerShown: false }}>
         {/* Recordを起点にする（タブ無し） */}
         <Stack.Screen name="record/rec" />
-        <Stack.Screen name="cassette" options={{ orientation: "landscape" }} />
+        <Stack.Screen
+          name="cassette"
+          options={{ orientation: "landscape", animation: "none" }}
+        />
 
         {/* もしモーダルを使うなら残す */}
         <Stack.Screen name="modal" options={{ presentation: "modal" }} />

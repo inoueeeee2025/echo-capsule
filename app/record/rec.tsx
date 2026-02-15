@@ -18,6 +18,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -76,6 +77,9 @@ function formatMillis(millis: number): string {
 }
 
 export default function RecordDoneScreen() {
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isLandscapeViewport = windowWidth > windowHeight;
+
   const [zenAntiqueSoftLoaded] = useFonts({
     ZenAntiqueSoft_400Regular,
   });
@@ -597,6 +601,10 @@ export default function RecordDoneScreen() {
         : "長押しして録音しましょう";
   const isArchiveTab = activeTab === "archive";
 
+  if (isLandscapeViewport) {
+    return <View style={styles.orientationTransitionGuard} />;
+  }
+
   return (
     <ImageBackground
       source={
@@ -999,6 +1007,7 @@ export default function RecordDoneScreen() {
 
 const styles = StyleSheet.create({
   background: { flex: 1, backgroundColor: "#000" },
+  orientationTransitionGuard: { flex: 1, backgroundColor: "#000" },
   archiveBackgroundTint: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(197, 219, 204, 0.42)",
