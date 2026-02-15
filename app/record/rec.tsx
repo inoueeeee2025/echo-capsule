@@ -1,6 +1,7 @@
 ﻿import RecordToolbar from "@/components/RecordToolbar";
 import { ZenAntiqueSoft_400Regular } from "@expo-google-fonts/zen-antique-soft";
 import ArchiveContent from "@/components/ArchiveContent";
+import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Slider from "@react-native-community/slider";
 import { Audio, AVPlaybackStatus } from "expo-av";
@@ -13,6 +14,7 @@ import {
   Easing,
   Image,
   ImageBackground,
+  Keyboard,
   Modal,
   Pressable,
   StyleSheet,
@@ -600,6 +602,18 @@ export default function RecordDoneScreen() {
         ? "本日の録音は完了しています。\n1年後のあなたは、どんな場所にいるかな？"
         : "長押しして録音しましょう";
   const isArchiveTab = activeTab === "archive";
+
+  useFocusEffect(
+    useCallback(() => {
+      Keyboard.dismiss();
+    }, []),
+  );
+
+  useEffect(() => {
+    if (activeTab === "rec") {
+      Keyboard.dismiss();
+    }
+  }, [activeTab]);
 
   if (isLandscapeViewport) {
     return <View style={styles.orientationTransitionGuard} />;

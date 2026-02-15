@@ -18,6 +18,14 @@ export default function RootLayout() {
         {/* Recordを起点にする（タブ無し） */}
         <Stack.Screen name="record/rec" />
         <Stack.Screen
+          name="record/kaihuu"
+          options={{ orientation: "portrait", animation: "none" }}
+        />
+        <Stack.Screen
+          name="record/kaihuu-text"
+          options={{ orientation: "portrait", animation: "slide_from_right" }}
+        />
+        <Stack.Screen
           name="cassette"
           options={{ orientation: "landscape", animation: "none" }}
         />

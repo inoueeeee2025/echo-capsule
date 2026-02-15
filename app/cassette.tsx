@@ -143,7 +143,7 @@ export default function CassetteScreen() {
             
           </Pressable>
           <Pressable
-            onPress={() => router.replace("/record/rec")}
+            onPress={() => router.replace("/record/kaihuu")}
             style={styles.bottomAction}
             hitSlop={8}>
             <Image

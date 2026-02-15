@@ -1,0 +1,650 @@
+﻿import ArchiveContent from "@/components/ArchiveContent";
+import RecordToolbar from "@/components/RecordToolbar";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import Slider from "@react-native-community/slider";
+import { useFonts } from "expo-font";
+import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Animated,
+  Easing,
+  Image,
+  ImageBackground,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const TRANSPARENT_THUMB = {
+  uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6p8N8AAAAASUVORK5CYII=",
+};
+const MOCK_DURATION_MS = 60000;
+const INITIAL_SLIDE_WIDTH = 360;
+const NOREC_BUTTON_NUDGE_Y = -20;
+const RECORDED_DATE_STORAGE_KEY = "recordedDateKey";
+const TEXT_BOARD_IMAGE = require("../../assets/images/textBoard.png");
+
+function toDateKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function formatDisplayDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+  const w = WEEKDAY[date.getDay()];
+  return `${y}/${m}/${d} ${w}`;
+}
+
+function formatMillis(millis: number): string {
+  const safe = Number.isFinite(millis) && millis > 0 ? millis : 0;
+  const totalSeconds = Math.floor(safe / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")} : ${String(seconds).padStart(2, "0")}`;
+}
+
+export default function KaihuuScreen() {
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isLandscapeViewport = windowWidth > windowHeight;
+  const [ydwLoaded] = useFonts({
+    YDWbananaslipplus: require("../../assets/fonts/YDWbananaslipplus.otf"),
+  });
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<"rec" | "archive">("archive");
+  const [toolbarTab, setToolbarTab] = useState<"rec" | "archive">("archive");
+  const [isTextMode, setIsTextMode] = useState(false);
+  const [showMainArchive, setShowMainArchive] = useState(false);
+  const [archiveSettledToMain, setArchiveSettledToMain] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [positionMillis, setPositionMillis] = useState(0);
+  const [isSliding, setIsSliding] = useState(false);
+  const [sliderMillis, setSliderMillis] = useState(0);
+  const [sliderWidth, setSliderWidth] = useState(0);
+  const [slideWidth, setSlideWidth] = useState(INITIAL_SLIDE_WIDTH);
+  const [recordedDateKey, setRecordedDateKey] = useState<string | null>(null);
+  const [line1Width, setLine1Width] = useState(0);
+  const [line2Width, setLine2Width] = useState(0);
+  const slideX = useRef(new Animated.Value(-INITIAL_SLIDE_WIDTH)).current;
+
+  const loadRecordedDateKey = useCallback(async () => {
+    try {
+      const saved = await AsyncStorage.getItem(RECORDED_DATE_STORAGE_KEY);
+      setRecordedDateKey(saved);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    loadRecordedDateKey();
+  }, [loadRecordedDateKey]);
+
+  useEffect(() => {
+    if (activeTab === "rec") {
+      loadRecordedDateKey();
+    }
+  }, [activeTab, loadRecordedDateKey]);
+
+  useEffect(() => {
+    if (!isPlaying || isSliding) return;
+    const id = setInterval(() => {
+      setPositionMillis((prev) => {
+        const next = prev + 100;
+        if (next >= MOCK_DURATION_MS) {
+          setIsPlaying(false);
+          return MOCK_DURATION_MS;
+        }
+        return next;
+      });
+    }, 100);
+    return () => clearInterval(id);
+  }, [isPlaying, isSliding]);
+
+  useEffect(() => {
+    Animated.timing(slideX, {
+      toValue: activeTab === "rec" ? 0 : -slideWidth,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [activeTab, slideWidth, slideX]);
+
+  const currentSliderValue = isSliding ? sliderMillis : positionMillis;
+  const timeLabel = useMemo(
+    () => formatMillis(currentSliderValue),
+    [currentSliderValue],
+  );
+  const thumbLeft = useMemo(() => {
+    if (sliderWidth <= 0 || MOCK_DURATION_MS <= 0) return 0;
+    const ratio = Math.min(
+      1,
+      Math.max(0, currentSliderValue / MOCK_DURATION_MS),
+    );
+    return ratio * sliderWidth;
+  }, [currentSliderValue, sliderWidth]);
+
+  const todayKey = toDateKey(new Date());
+  const isLockedToday = recordedDateKey === todayKey;
+  const recGuideText = isLockedToday
+    ? "本日の録音は完了しています。\n1年後のあなたは、どんな場所にいるかな？"
+    : "長押しして録音しましょう";
+  const transcriptLine1 = "こんにちはー";
+  const transcriptLine2 = "おはようございますー";
+  const ydwStyle = ydwLoaded ? styles.ydwBananaslipPlus : undefined;
+
+  useEffect(() => {
+    if (recordedDateKey && recordedDateKey !== todayKey) {
+      setRecordedDateKey(null);
+      AsyncStorage.removeItem(RECORDED_DATE_STORAGE_KEY).catch(() => {});
+    }
+  }, [recordedDateKey, todayKey]);
+
+  useEffect(() => {
+    const resolved = Image.resolveAssetSource(TEXT_BOARD_IMAGE);
+    if (!resolved?.uri) return;
+    Image.prefetch(resolved.uri).catch(() => {});
+  }, []);
+
+  if (isLandscapeViewport) {
+    return (
+      <ImageBackground
+        source={
+          activeTab === "rec"
+            ? isLockedToday
+              ? require("../../assets/images/norec_background.png")
+              : require("../../assets/images/home.png")
+            : showMainArchive
+              ? require("../../assets/images/home.png")
+              : require("../../assets/images/kaihuu_background.png")
+        }
+        resizeMode="cover"
+        style={styles.background}
+      />
+    );
+  }
+
+  return (
+    <ImageBackground
+      source={
+        activeTab === "rec"
+          ? isLockedToday
+            ? require("../../assets/images/norec_background.png")
+            : require("../../assets/images/home.png")
+          : showMainArchive
+            ? require("../../assets/images/home.png")
+            : require("../../assets/images/kaihuu_background.png")
+      }
+      resizeMode="cover"
+      style={styles.background}
+    >
+      {activeTab === "archive" && showMainArchive ? (
+        <>
+          <View pointerEvents="none" style={styles.archiveBackgroundTint} />
+          <LinearGradient
+            pointerEvents="none"
+            colors={[
+              "rgba(255, 255, 255, 0.2)",
+              "rgba(255, 255, 255, 0.42)",
+              "rgba(255, 255, 255, 0.2)",
+            ]}
+            locations={[0, 0.5, 1]}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={styles.archiveGradientVertical}
+          />
+          <LinearGradient
+            pointerEvents="none"
+            colors={[
+              "rgba(255, 255, 255, 0.14)",
+              "rgba(255, 255, 255, 0.28)",
+              "rgba(255, 255, 255, 0.14)",
+            ]}
+            locations={[0, 0.5, 1]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={styles.archiveGradientHorizontal}
+          />
+        </>
+      ) : null}
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.container}>
+          <View style={styles.topArea}>
+            {activeTab !== "rec" && !showMainArchive ? (
+              <Pressable
+                onPress={() => router.replace("/cassette")}
+                hitSlop={8}
+                style={styles.backToCassette}
+              >
+                <View style={styles.backToCassetteLabelWrap}>
+                  <Text style={styles.backToCassetteText}>
+                    カセットモードへ
+                  </Text>
+                  <View style={styles.backToCassetteUnderline} />
+                </View>
+              </Pressable>
+            ) : null}
+
+            <RecordToolbar
+              active={toolbarTab}
+              onPressRec={() => {
+                setToolbarTab("rec");
+                setActiveTab("rec");
+              }}
+              onPressArchive={() => {
+                const wasArchiveTab = activeTab === "archive";
+                setToolbarTab("archive");
+                setActiveTab("archive");
+                if (wasArchiveTab) {
+                  setShowMainArchive(true);
+                  setArchiveSettledToMain(true);
+                  return;
+                }
+                setShowMainArchive(archiveSettledToMain);
+              }}
+            />
+          </View>
+
+          <View
+            style={styles.slideViewport}
+            onLayout={(e) => setSlideWidth(e.nativeEvent.layout.width)}
+          >
+            <Animated.View
+              style={[
+                styles.slideTrack,
+                {
+                  width: slideWidth * 2,
+                  transform: [{ translateX: slideX }],
+                },
+              ]}
+            >
+              <View style={[styles.slidePane, { width: slideWidth }]}>
+                <View style={styles.recTabWrap}>
+                  <Text style={styles.dateText}>
+                    {formatDisplayDate(new Date())}
+                  </Text>
+                  <View style={styles.centerArea}>
+                    <Pressable
+                      style={styles.recButton}
+                      disabled={isLockedToday}
+                    >
+                      <Image
+                        source={
+                          isLockedToday
+                            ? require("../../assets/images/norecButton.png")
+                            : require("../../assets/images/home_voiceButton.png")
+                        }
+                        style={[
+                          styles.recButtonImage,
+                          isLockedToday && styles.recButtonImageDisabled,
+                          isLockedToday && {
+                            transform: [{ translateY: NOREC_BUTTON_NUDGE_Y }],
+                          },
+                        ]}
+                        resizeMode="contain"
+                      />
+                    </Pressable>
+                  </View>
+                  <Text style={styles.recGuideText}>{recGuideText}</Text>
+                </View>
+              </View>
+
+              <View style={[styles.slidePane, { width: slideWidth }]}>
+                {showMainArchive ? (
+                  <ArchiveContent
+                    embedded
+                    onPressRec={() => {
+                      setToolbarTab("rec");
+                      setActiveTab("rec");
+                    }}
+                    onPressTranscript={() => {
+                      setToolbarTab("archive");
+                      setActiveTab("archive");
+                      setShowMainArchive(false);
+                      setArchiveSettledToMain(false);
+                      setIsTextMode(true);
+                    }}
+                  />
+                ) : (
+                  <View style={styles.recWrap}>
+                    <Text style={styles.dateText}>
+                      {formatDisplayDate(new Date())}
+                    </Text>
+
+                    {isTextMode ? (
+                      <>
+                        <ImageBackground
+                          source={TEXT_BOARD_IMAGE}
+                          resizeMode="stretch"
+                          style={styles.paperCard}
+                        >
+                          <ScrollView
+                            style={styles.paperScroll}
+                            contentContainerStyle={styles.paperScrollContent}
+                            showsVerticalScrollIndicator={false}
+                          >
+                            <Text
+                              style={[styles.lineText, ydwStyle]}
+                              onTextLayout={(e) => {
+                                const w = e.nativeEvent.lines?.[0]?.width ?? 0;
+                                if (w > 0) setLine1Width(w);
+                              }}
+                            >
+                              {transcriptLine1}
+                            </Text>
+                            <View
+                              style={[
+                                styles.line,
+                                { width: Math.max(1, (line1Width || 1) - 2) },
+                              ]}
+                            />
+                            <Text
+                              style={[
+                                styles.lineText,
+                                styles.secondLineText,
+                                ydwStyle,
+                              ]}
+                              onTextLayout={(e) => {
+                                const w = e.nativeEvent.lines?.[0]?.width ?? 0;
+                                if (w > 0) setLine2Width(w);
+                              }}
+                            >
+                              {transcriptLine2}
+                            </Text>
+                            <View
+                              style={[
+                                styles.lineWide,
+                                { width: Math.max(1, (line2Width || 1) - 2) },
+                              ]}
+                            />
+                          </ScrollView>
+                        </ImageBackground>
+                        <Pressable
+                          style={styles.audioModeLink}
+                          onPress={() => setIsTextMode(false)}
+                        >
+                          <Text style={styles.audioModeLinkText}>
+                            音声モードへ
+                          </Text>
+                        </Pressable>
+                      </>
+                    ) : (
+                      <>
+                        <View style={styles.centerArea}>
+                          <Pressable
+                            onPress={() => setIsPlaying((prev) => !prev)}
+                            style={styles.playerButton}
+                          >
+                            <Image
+                              source={
+                                isPlaying
+                                  ? require("../../assets/images/stopButton.png")
+                                  : require("../../assets/images/saiseiButton.png")
+                              }
+                              style={styles.playerImage}
+                              resizeMode="contain"
+                            />
+                          </Pressable>
+                        </View>
+
+                        <View style={styles.bottomArea}>
+                          <View style={styles.progressRow}>
+                            <Text style={styles.timeText}>{timeLabel}</Text>
+
+                            <View
+                              style={styles.sliderWrap}
+                              onLayout={(e) =>
+                                setSliderWidth(e.nativeEvent.layout.width)
+                              }
+                            >
+                              <Slider
+                                value={currentSliderValue}
+                                minimumValue={0}
+                                maximumValue={MOCK_DURATION_MS}
+                                onSlidingStart={() => setIsSliding(true)}
+                                onValueChange={setSliderMillis}
+                                onSlidingComplete={(value) => {
+                                  setIsSliding(false);
+                                  setSliderMillis(value);
+                                  setPositionMillis(value);
+                                }}
+                                tapToSeek
+                                minimumTrackTintColor="#a7a2ae"
+                                maximumTrackTintColor="rgba(207, 200, 214, 0.9)"
+                                thumbTintColor="transparent"
+                                thumbImage={TRANSPARENT_THUMB}
+                                style={styles.slider}
+                              />
+                              <View
+                                pointerEvents="none"
+                                style={[
+                                  styles.customThumb,
+                                  {
+                                    left: Math.max(
+                                      0,
+                                      Math.min(sliderWidth - 10, thumbLeft - 5),
+                                    ),
+                                  },
+                                ]}
+                              />
+                            </View>
+                          </View>
+
+                          <Pressable
+                            style={styles.textModeLink}
+                            onPress={() => setIsTextMode(true)}
+                          >
+                            <Text style={styles.textModeLinkText}>
+                              テキストモードへ
+                            </Text>
+                          </Pressable>
+                        </View>
+                      </>
+                    )}
+                  </View>
+                )}
+              </View>
+            </Animated.View>
+          </View>
+        </View>
+      </SafeAreaView>
+    </ImageBackground>
+  );
+}
+
+const styles = StyleSheet.create({
+  background: { flex: 1, backgroundColor: "#000" },
+  archiveBackgroundTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(197, 219, 204, 0.42)",
+  },
+  archiveGradientVertical: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  archiveGradientHorizontal: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  safeArea: { flex: 1 },
+  container: { flex: 1, paddingHorizontal: 24 },
+  topArea: { paddingTop: 8, position: "relative" },
+  backToCassette: { position: "absolute", top: 6, left: 2, zIndex: 10 },
+  backToCassetteText: {
+    fontSize: 13,
+    color: "#090909",
+    fontWeight: "600",
+    letterSpacing: 0.2,
+    top: 4,
+  },
+  backToCassetteLabelWrap: {
+    alignSelf: "flex-start",
+  },
+  backToCassetteUnderline: {
+    height: 1,
+    backgroundColor: "#090909",
+    marginTop: 8,
+  },
+  slideViewport: {
+    flex: 1,
+    width: "100%",
+    overflow: "hidden",
+  },
+  slideTrack: {
+    flex: 1,
+    flexDirection: "row",
+  },
+  slidePane: {
+    flex: 1,
+  },
+  recWrap: { flex: 1 },
+  recTabWrap: { flex: 1 },
+  dateText: {
+    marginTop: 36,
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#767680",
+    letterSpacing: 0.2,
+    alignSelf: "center",
+  },
+  centerArea: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  playerButton: {
+    width: 176,
+    height: 176,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  playerImage: {
+    width: 130,
+    height: 130,
+  },
+  recButton: {
+    width: 176,
+    height: 176,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  recButtonImage: {
+    width: 140,
+    height: 140,
+  },
+  recButtonImageDisabled: {
+    opacity: 0.9,
+  },
+  bottomArea: { width: "100%", paddingBottom: 74 },
+  progressRow: { flexDirection: "row", alignItems: "center", marginBottom: 0 },
+  timeText: {
+    width: 42,
+    fontSize: 7.5,
+    color: "#9a95a2",
+    letterSpacing: 0.8,
+    marginLeft: 40,
+  },
+  sliderWrap: {
+    width: "60%",
+    marginLeft: -3,
+    height: 24,
+    justifyContent: "center",
+  },
+  slider: {
+    width: "100%",
+    height: 24,
+    zIndex: 1,
+  },
+  customThumb: {
+    position: "absolute",
+    top: 7,
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "rgba(188, 182, 194, 0.63)",
+    zIndex: 3,
+    elevation: 3,
+  },
+  audioModeLink: {
+    alignSelf: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  audioModeLinkText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#767680",
+    letterSpacing: 0.2,
+    bottom: -25,
+  },
+  textModeLink: {
+    alignSelf: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  textModeLinkText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#767680",
+    letterSpacing: 0.2,
+    bottom: -40,
+  },
+  recGuideText: {
+    textAlign: "center",
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#767680",
+    letterSpacing: 0.2,
+    lineHeight: 24,
+    marginBottom: 84,
+  },
+  paperCard: {
+    marginTop: 56,
+    width: 312,
+    height: 449,
+    flex: 1,
+    maxHeight: 470,
+    elevation: 3,
+    paddingTop: 30,
+    paddingHorizontal: 26,
+    alignSelf: "center",
+  },
+  paperScroll: {
+    flex: 1,
+  },
+  paperScrollContent: {
+    paddingBottom: 8,
+  },
+  lineText: {
+    fontSize: 20,
+    lineHeight: 26,
+    color: "#242428",
+    letterSpacing: 0.3,
+    alignSelf: "flex-start",
+  },
+  secondLineText: {
+    marginTop: 20,
+  },
+  line: {
+    marginTop: 3,
+    width: 142,
+    height: 2,
+    backgroundColor: "#3a3a3f",
+  },
+  lineWide: {
+    marginTop: 3,
+    width: 240,
+    height: 2,
+    backgroundColor: "#3a3a3f",
+  },
+  ydwBananaslipPlus: {
+    fontFamily: "YDWbananaslipplus",
+  },
+});

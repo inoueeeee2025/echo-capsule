@@ -1,9 +1,10 @@
-import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+﻿import { useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import PlayCircleSvg from "@/assets/images/Play_circle.svg";
 import {
   Alert,
   Image,
+  Keyboard,
   Modal,
   Pressable,
   ScrollView,
@@ -24,6 +25,7 @@ type RecordingItem = {
 type ArchiveContentProps = {
   embedded?: boolean;
   onPressRec?: () => void;
+  onPressTranscript?: (id: string) => void;
 };
 
 const MONTHS = [
@@ -104,13 +106,38 @@ function createCalendarCells(year: number, monthIndex: number): Date[] {
 export default function ArchiveContent({
   embedded = false,
   onPressRec,
+  onPressTranscript,
 }: ArchiveContentProps) {
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardDidShow", () => {
+      setIsKeyboardVisible(true);
+    });
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   const showFullTitle = (title: string) => {
     Alert.alert("タイトル", title);
   };
 
   const isSvgReady = typeof PlayCircleSvg !== "number";
   const router = useRouter();
+  const openTranscript = (id: string) => {
+    Keyboard.dismiss();
+    if (onPressTranscript) {
+      onPressTranscript(id);
+      return;
+    }
+    router.push("/record/kaihuu-text");
+  };
   const openCassetteScreen = () => {
     router.push("/cassette");
   };
@@ -171,6 +198,12 @@ export default function ArchiveContent({
 
   return (
     <View style={[styles.container, embedded && styles.embeddedContainer]}>
+      {isKeyboardVisible ? (
+        <Pressable
+          style={styles.keyboardDismissOverlay}
+          onPress={Keyboard.dismiss}
+        />
+      ) : null}
       {!embedded ? (
         <>
           <View style={styles.backWrap}>
@@ -319,7 +352,7 @@ export default function ArchiveContent({
                   )}
                 </Pressable>
                 <Pressable
-                  onPress={() => console.log("transcript", selectedDateItems[0].id)}
+                  onPress={() => openTranscript(selectedDateItems[0].id)}
                   hitSlop={6}>
                   <Text
                     style={[
@@ -367,7 +400,9 @@ export default function ArchiveContent({
               )}
             </Pressable>
 
-            <Pressable onPress={() => console.log("transcript", item.id)} hitSlop={6}>
+            <Pressable
+              onPress={() => openTranscript(item.id)}
+              hitSlop={6}>
               <Text style={[styles.transcript, !item.hasTranscript && styles.transcriptDisabled]}>
                 T
               </Text>
@@ -751,7 +786,7 @@ const styles = StyleSheet.create({
     marginLeft: 2,
   },
   transcriptDisabled: {
-    color: "#a4a7aa",
+    color: "#1d2022",
   },
   emptyWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -789,4 +824,9 @@ const styles = StyleSheet.create({
     color: "#111315",
     fontWeight: "600",
   },
+  keyboardDismissOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 30,
+  },
 })
+

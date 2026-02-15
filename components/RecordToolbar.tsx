@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
   toolbarWrapper: {
     width: "100%",
     alignItems: "center",
-    marginTop: 30,
+    marginTop: 38,
   },
   toolbarPng: {
     width: TOOLBAR_WIDTH,
