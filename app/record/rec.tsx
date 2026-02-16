@@ -8,6 +8,7 @@ import { Audio, AVPlaybackStatus } from "expo-av";
 import { useFonts } from "expo-font";
 import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
   Animated,
   Dimensions,
@@ -53,6 +54,7 @@ const TRANSPARENT_THUMB = {
   uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6p8N8AAAAASUVORK5CYII=",
 };
 const RECORDED_DATE_STORAGE_KEY = "recordedDateKey";
+const TAB_SWIPE_THRESHOLD = 28;
 let didDevBootResetRecordedDateKey = false;
 
 function toDateKey(date: Date): string {
@@ -602,6 +604,33 @@ export default function RecordDoneScreen() {
         ? "本日の録音は完了しています。\n1年後のあなたは、どんな場所にいるかな？"
         : "長押しして録音しましょう";
   const isArchiveTab = activeTab === "archive";
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .runOnJS(true)
+        .enabled(!(activeTab === "rec" && flow === FLOW.RECORD && (isRecordPressing || isRecording)))
+        .activeOffsetX([-18, 18])
+        .failOffsetY([-24, 24])
+        .minDistance(18)
+        .cancelsTouchesInView(false)
+        .onEnd((gesture) => {
+          const isLeftSwipe =
+            gesture.translationX <= -TAB_SWIPE_THRESHOLD ||
+            (gesture.velocityX < -220 && gesture.translationX < -8);
+          const isRightSwipe =
+            gesture.translationX >= TAB_SWIPE_THRESHOLD ||
+            (gesture.velocityX > 220 && gesture.translationX > 8);
+
+          if (isLeftSwipe && activeTab === "rec") {
+            setActiveTab("archive");
+            return;
+          }
+          if (isRightSwipe && activeTab === "archive") {
+            setActiveTab("rec");
+          }
+        }),
+    [activeTab, flow, isRecordPressing, isRecording],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -661,8 +690,9 @@ export default function RecordDoneScreen() {
           />
         </>
       ) : null}
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.container}>
+      <GestureDetector gesture={panGesture}>
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.container}>
           <View
             pointerEvents={
               isProjectModalVisible || isSaveComplete ? "none" : "auto"
@@ -1013,8 +1043,9 @@ export default function RecordDoneScreen() {
               </View>
             </View>
           </Modal>
-        </View>
-      </SafeAreaView>
+          </View>
+        </SafeAreaView>
+      </GestureDetector>
     </ImageBackground>
   );
 }
@@ -1361,3 +1392,5 @@ const styles = StyleSheet.create({
     marginTop: -15,
   },
 });
+
+

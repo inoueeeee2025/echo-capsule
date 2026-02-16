@@ -2,6 +2,7 @@
 import { useFonts } from "expo-font";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
   ImageBackground,
   Pressable,
@@ -13,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const TAB_SWIPE_THRESHOLD = 28;
 
 function formatDisplayDate(date: Date): string {
   const y = date.getFullYear();
@@ -36,6 +38,32 @@ export default function KaihuuTextScreen() {
   const transcriptLine2 = "おはようございますー";
 
   const ydwStyle = ydwLoaded ? styles.ydwBananaslipPlus : undefined;
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .runOnJS(true)
+        .activeOffsetX([-18, 18])
+        .failOffsetY([-24, 24])
+        .minDistance(18)
+        .cancelsTouchesInView(false)
+        .onEnd((gesture) => {
+          const isLeftSwipe =
+            gesture.translationX <= -TAB_SWIPE_THRESHOLD ||
+            (gesture.velocityX < -220 && gesture.translationX < -8);
+          const isRightSwipe =
+            gesture.translationX >= TAB_SWIPE_THRESHOLD ||
+            (gesture.velocityX > 220 && gesture.translationX > 8);
+
+          if (isLeftSwipe && activeTab === "rec") {
+            setActiveTab("archive");
+            return;
+          }
+          if (isRightSwipe && activeTab === "archive") {
+            setActiveTab("rec");
+          }
+        }),
+    [activeTab],
+  );
 
   return (
     <ImageBackground
@@ -43,8 +71,9 @@ export default function KaihuuTextScreen() {
       resizeMode="cover"
       style={styles.background}
     >
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.container}>
+      <GestureDetector gesture={panGesture}>
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.container}>
           <Pressable
             onPress={() => router.replace("/cassette")}
             hitSlop={8}
@@ -109,8 +138,9 @@ export default function KaihuuTextScreen() {
           >
             <Text style={styles.audioModeLinkText}>音声モードへ</Text>
           </Pressable>
-        </View>
-      </SafeAreaView>
+          </View>
+        </SafeAreaView>
+      </GestureDetector>
     </ImageBackground>
   );
 }
@@ -212,3 +242,5 @@ const styles = StyleSheet.create({
     fontFamily: "YDWbananaslipplus",
   },
 });
+
+

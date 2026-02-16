@@ -4,8 +4,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Slider from "@react-native-community/slider";
 import { useFonts } from "expo-font";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
   Animated,
   Easing,
@@ -29,6 +30,7 @@ const INITIAL_SLIDE_WIDTH = 360;
 const NOREC_BUTTON_NUDGE_Y = -20;
 const RECORDED_DATE_STORAGE_KEY = "recordedDateKey";
 const TEXT_BOARD_IMAGE = require("../../assets/images/textBoard.png");
+const TAB_SWIPE_THRESHOLD = 28;
 
 function toDateKey(date: Date): string {
   const y = date.getFullYear();
@@ -54,6 +56,7 @@ function formatMillis(millis: number): string {
 }
 
 export default function KaihuuScreen() {
+  const params = useLocalSearchParams<{ mode?: string }>();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isLandscapeViewport = windowWidth > windowHeight;
   const [ydwLoaded] = useFonts({
@@ -140,12 +143,67 @@ export default function KaihuuScreen() {
   const transcriptLine2 = "おはようございますー";
   const ydwStyle = ydwLoaded ? styles.ydwBananaslipPlus : undefined;
 
+  const switchToRecTab = useCallback(() => {
+    setToolbarTab("rec");
+    setActiveTab("rec");
+  }, []);
+
+  const switchToArchiveTab = useCallback(
+    (wasArchiveTab: boolean) => {
+      setToolbarTab("archive");
+      setActiveTab("archive");
+      if (wasArchiveTab) {
+        setShowMainArchive(true);
+        setArchiveSettledToMain(true);
+        return;
+      }
+      setShowMainArchive(archiveSettledToMain);
+    },
+    [archiveSettledToMain],
+  );
+
+  const panResponder = useMemo(
+    () =>
+      Gesture.Pan()
+        .runOnJS(true)
+        .activeOffsetX([-18, 18])
+        .failOffsetY([-24, 24])
+        .minDistance(18)
+        .cancelsTouchesInView(false)
+        .onEnd((gesture) => {
+          const isLeftSwipe =
+            gesture.translationX <= -TAB_SWIPE_THRESHOLD ||
+            (gesture.velocityX < -220 && gesture.translationX < -8);
+          const isRightSwipe =
+            gesture.translationX >= TAB_SWIPE_THRESHOLD ||
+            (gesture.velocityX > 220 && gesture.translationX > 8);
+
+          if (isLeftSwipe && activeTab === "rec") {
+            switchToArchiveTab(false);
+            return;
+          }
+          if (isRightSwipe && activeTab === "archive") {
+            switchToRecTab();
+          }
+        }),
+    [activeTab, switchToArchiveTab, switchToRecTab],
+  );
+
   useEffect(() => {
     if (recordedDateKey && recordedDateKey !== todayKey) {
       setRecordedDateKey(null);
       AsyncStorage.removeItem(RECORDED_DATE_STORAGE_KEY).catch(() => {});
     }
   }, [recordedDateKey, todayKey]);
+
+  useEffect(() => {
+    if (params.mode !== "text") return;
+    setToolbarTab("archive");
+    setActiveTab("archive");
+    setShowMainArchive(false);
+    setArchiveSettledToMain(false);
+    setIsTextMode(true);
+  }, [params.mode]);
 
   useEffect(() => {
     const resolved = Image.resolveAssetSource(TEXT_BOARD_IMAGE);
@@ -214,8 +272,9 @@ export default function KaihuuScreen() {
           />
         </>
       ) : null}
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.container}>
+      <GestureDetector gesture={panResponder}>
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.container}>
           <View style={styles.topArea}>
             {activeTab !== "rec" && !showMainArchive ? (
               <Pressable
@@ -234,21 +293,8 @@ export default function KaihuuScreen() {
 
             <RecordToolbar
               active={toolbarTab}
-              onPressRec={() => {
-                setToolbarTab("rec");
-                setActiveTab("rec");
-              }}
-              onPressArchive={() => {
-                const wasArchiveTab = activeTab === "archive";
-                setToolbarTab("archive");
-                setActiveTab("archive");
-                if (wasArchiveTab) {
-                  setShowMainArchive(true);
-                  setArchiveSettledToMain(true);
-                  return;
-                }
-                setShowMainArchive(archiveSettledToMain);
-              }}
+              onPressRec={switchToRecTab}
+              onPressArchive={() => switchToArchiveTab(activeTab === "archive")}
             />
           </View>
 
@@ -300,10 +346,7 @@ export default function KaihuuScreen() {
                 {showMainArchive ? (
                   <ArchiveContent
                     embedded
-                    onPressRec={() => {
-                      setToolbarTab("rec");
-                      setActiveTab("rec");
-                    }}
+                    onPressRec={switchToRecTab}
                     onPressTranscript={() => {
                       setToolbarTab("archive");
                       setActiveTab("archive");
@@ -453,8 +496,9 @@ export default function KaihuuScreen() {
               </View>
             </Animated.View>
           </View>
-        </View>
-      </SafeAreaView>
+          </View>
+        </SafeAreaView>
+      </GestureDetector>
     </ImageBackground>
   );
 }
@@ -648,3 +692,5 @@ const styles = StyleSheet.create({
     fontFamily: "YDWbananaslipplus",
   },
 });
+
+

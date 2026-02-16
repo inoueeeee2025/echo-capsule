@@ -136,7 +136,7 @@ export default function ArchiveContent({
       onPressTranscript(id);
       return;
     }
-    router.push("/record/kaihuu-text");
+    router.push({ pathname: "/record/kaihuu", params: { mode: "text", transcriptId: id } });
   };
   const openCassetteScreen = () => {
     router.push("/cassette");
@@ -182,6 +182,13 @@ export default function ArchiveContent({
   const isSearching = searchText.trim().length > 0;
   const sectionTitle = isSearching ? "検索結果" : "最新10件";
 
+  useEffect(() => {
+    if (!isSearching) return;
+    setSelectedDateKey(null);
+    setMonthPickerOpen(false);
+    setYearPickerOpen(false);
+  }, [isSearching]);
+
   const moveMonth = (delta: number) => {
     const next = new Date(year, monthIndex + delta, 1);
     setCurrentMonth(next);
@@ -197,7 +204,12 @@ export default function ArchiveContent({
   };
 
   return (
-    <View style={[styles.container, embedded && styles.embeddedContainer]}>
+    <ScrollView
+      style={[styles.container, embedded && styles.embeddedContainer]}
+      contentContainerStyle={styles.pageContent}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
       {isKeyboardVisible ? (
         <Pressable
           style={styles.keyboardDismissOverlay}
@@ -253,120 +265,122 @@ export default function ArchiveContent({
         />
       </View>
 
-      <View
-        style={[
-          styles.calendarStack,
-        ]}>
-        <View style={styles.calendarCard}>
-          <View style={styles.calendarHeader}>
-            <Pressable style={styles.navArrowWrap} onPress={() => moveMonth(-1)}>
-              <Image
-                source={require("../assets/images/miniArrow.png")}
-                style={styles.miniArrowLeft}
-                resizeMode="contain"
-              />
-            </Pressable>
+      {!isSearching ? (
+        <View
+          style={[
+            styles.calendarStack,
+          ]}>
+          <View style={styles.calendarCard}>
+            <View style={styles.calendarHeader}>
+              <Pressable style={styles.navArrowWrap} onPress={() => moveMonth(-1)}>
+                <Image
+                  source={require("../assets/images/miniArrow.png")}
+                  style={styles.miniArrowLeft}
+                  resizeMode="contain"
+                />
+              </Pressable>
 
-            <Pressable style={styles.dropdownPill} onPress={() => setMonthPickerOpen(true)}>
-              <Text style={styles.dropdownText}>{MONTHS[monthIndex]}</Text>
-              <Image
-                source={require("../assets/images/miniArrow.png")}
-                style={styles.miniArrowDropdown}
-                resizeMode="contain"
-              />
-            </Pressable>
+              <Pressable style={styles.dropdownPill} onPress={() => setMonthPickerOpen(true)}>
+                <Text style={styles.dropdownText}>{MONTHS[monthIndex]}</Text>
+                <Image
+                  source={require("../assets/images/miniArrow.png")}
+                  style={styles.miniArrowDropdown}
+                  resizeMode="contain"
+                />
+              </Pressable>
 
-            <Pressable style={styles.dropdownPill} onPress={() => setYearPickerOpen(true)}>
-              <Text style={styles.dropdownText}>{String(year)}</Text>
-              <Image
-                source={require("../assets/images/miniArrow.png")}
-                style={styles.miniArrowDropdown}
-                resizeMode="contain"
-              />
-            </Pressable>
+              <Pressable style={styles.dropdownPill} onPress={() => setYearPickerOpen(true)}>
+                <Text style={styles.dropdownText}>{String(year)}</Text>
+                <Image
+                  source={require("../assets/images/miniArrow.png")}
+                  style={styles.miniArrowDropdown}
+                  resizeMode="contain"
+                />
+              </Pressable>
 
-            <Pressable style={styles.navArrowWrap} onPress={() => moveMonth(1)}>
-              <Image
-                source={require("../assets/images/miniArrow.png")}
-                style={styles.miniArrowRight}
-                resizeMode="contain"
-              />
-            </Pressable>
-          </View>
-
-          <View style={styles.weekRow}>
-            {WEEKDAYS.map((w) => (
-              <Text key={w} style={styles.weekText}>
-                {w}
-              </Text>
-            ))}
-          </View>
-
-          <View style={styles.grid}>
-            {cells.map((date) => {
-              const key = toDateKey(date);
-              const inCurrentMonth =
-                date.getMonth() === monthIndex && date.getFullYear() === year;
-              const hasDot = dotDateKeys.has(key);
-              const isSelected = selectedDateKey === key;
-              return (
-                <Pressable key={key} style={styles.dayCell} onPress={() => onSelectDay(date)}>
-                  <View style={[styles.dayNumberWrap, isSelected && styles.daySelected]}>
-                    <Text style={[styles.dayNumber, !inCurrentMonth && styles.dayNumberMuted]}>
-                      {date.getDate()}
-                    </Text>
-                  </View>
-                  <View style={styles.dotArea}>{hasDot ? <View style={styles.dot} /> : null}</View>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-
-        {selectedDateKey && selectedDateItems.length > 0 ? (
-          <>
-            <Pressable
-              style={styles.deliveryModalBackdrop}
-              onPress={() => setSelectedDateKey(null)}
-            />
-            <View style={styles.deliveryModalCard}>
-              <Text style={styles.deliveryModalDate}>{formatDateJPWithWeekday(selectedDateKey)}</Text>
-              <View style={styles.deliveryModalRow}>
-                <Text
-                  style={styles.deliveryModalTitle}
-                  numberOfLines={1}
-                  onLongPress={() => showFullTitle(selectedDateItems[0].title)}>
-                  {selectedDateItems[0].title}
-                </Text>
-                <Text style={styles.deliveryModalDuration}>
-                  {formatDuration(selectedDateItems[0].durationSec)}
-                </Text>
-                <Pressable
-                  style={styles.playButton}
-                  onPress={openCassetteScreen}
-                  hitSlop={6}>
-                  {isSvgReady ? (
-                    <PlayCircleSvg width={18} height={18} />
-                  ) : (
-                    <Text style={styles.playIcon}>{">"}</Text>
-                  )}
-                </Pressable>
-                <Pressable
-                  onPress={() => openTranscript(selectedDateItems[0].id)}
-                  hitSlop={6}>
-                  <Text
-                    style={[
-                      styles.transcript,
-                      !selectedDateItems[0].hasTranscript && styles.transcriptDisabled,
-                    ]}>
-                    T
-                  </Text>
-                </Pressable>
-              </View>
+              <Pressable style={styles.navArrowWrap} onPress={() => moveMonth(1)}>
+                <Image
+                  source={require("../assets/images/miniArrow.png")}
+                  style={styles.miniArrowRight}
+                  resizeMode="contain"
+                />
+              </Pressable>
             </View>
-          </>
-        ) : null}
-      </View>
+
+            <View style={styles.weekRow}>
+              {WEEKDAYS.map((w) => (
+                <Text key={w} style={styles.weekText}>
+                  {w}
+                </Text>
+              ))}
+            </View>
+
+            <View style={styles.grid}>
+              {cells.map((date) => {
+                const key = toDateKey(date);
+                const inCurrentMonth =
+                  date.getMonth() === monthIndex && date.getFullYear() === year;
+                const hasDot = dotDateKeys.has(key);
+                const isSelected = selectedDateKey === key;
+                return (
+                  <Pressable key={key} style={styles.dayCell} onPress={() => onSelectDay(date)}>
+                    <View style={[styles.dayNumberWrap, isSelected && styles.daySelected]}>
+                      <Text style={[styles.dayNumber, !inCurrentMonth && styles.dayNumberMuted]}>
+                        {date.getDate()}
+                      </Text>
+                    </View>
+                    <View style={styles.dotArea}>{hasDot ? <View style={styles.dot} /> : null}</View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          {selectedDateKey && selectedDateItems.length > 0 ? (
+            <>
+              <Pressable
+                style={styles.deliveryModalBackdrop}
+                onPress={() => setSelectedDateKey(null)}
+              />
+              <View style={styles.deliveryModalCard}>
+                <Text style={styles.deliveryModalDate}>{formatDateJPWithWeekday(selectedDateKey)}</Text>
+                <View style={styles.deliveryModalRow}>
+                  <Text
+                    style={styles.deliveryModalTitle}
+                    numberOfLines={1}
+                    onLongPress={() => showFullTitle(selectedDateItems[0].title)}>
+                    {selectedDateItems[0].title}
+                  </Text>
+                  <Text style={styles.deliveryModalDuration}>
+                    {formatDuration(selectedDateItems[0].durationSec)}
+                  </Text>
+                  <Pressable
+                    style={styles.playButton}
+                    onPress={openCassetteScreen}
+                    hitSlop={6}>
+                    {isSvgReady ? (
+                      <PlayCircleSvg width={18} height={18} />
+                    ) : (
+                      <Text style={styles.playIcon}>{">"}</Text>
+                    )}
+                  </Pressable>
+                  <Pressable
+                    onPress={() => openTranscript(selectedDateItems[0].id)}
+                    hitSlop={6}>
+                    <Text
+                      style={[
+                        styles.transcript,
+                        !selectedDateItems[0].hasTranscript && styles.transcriptDisabled,
+                      ]}>
+                      T
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </>
+          ) : null}
+        </View>
+      ) : null}
 
       <View style={styles.sectionHead}>
         <Image
@@ -377,7 +391,7 @@ export default function ArchiveContent({
         <Text style={styles.sectionTitle}>{sectionTitle}</Text>
       </View>
 
-      <ScrollView style={styles.listWrap} contentContainerStyle={styles.listContent}>
+      <View style={styles.listWrap}>
         {visibleList.map((item) => (
           <View key={item.id} style={styles.row}>
             <Text style={styles.duration}>{formatDuration(item.durationSec)}</Text>
@@ -414,7 +428,7 @@ export default function ArchiveContent({
             <Text style={styles.emptyText}>No recordings found.</Text>
           </View>
         ) : null}
-      </ScrollView>
+      </View>
 
       <Modal
         visible={monthPickerOpen}
@@ -423,19 +437,21 @@ export default function ArchiveContent({
         onRequestClose={() => setMonthPickerOpen(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setMonthPickerOpen(false)}>
           <View style={styles.modalCard}>
-            {MONTHS.map((m, idx) => (
-              <Pressable
-                key={m}
-                style={styles.modalRow}
-                onPress={() => {
-                  setCurrentMonth(new Date(year, idx, 1));
-                  setMonthPickerOpen(false);
-                }}>
-                <Text style={[styles.modalRowText, idx === monthIndex && styles.modalRowTextActive]}>
-                  {m}
-                </Text>
-              </Pressable>
-            ))}
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {MONTHS.map((m, idx) => (
+                <Pressable
+                  key={m}
+                  style={styles.modalRow}
+                  onPress={() => {
+                    setCurrentMonth(new Date(year, idx, 1));
+                    setMonthPickerOpen(false);
+                  }}>
+                  <Text style={[styles.modalRowText, idx === monthIndex && styles.modalRowTextActive]}>
+                    {m}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
           </View>
         </Pressable>
       </Modal>
@@ -463,7 +479,7 @@ export default function ArchiveContent({
           </View>
         </Pressable>
       </Modal>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -472,6 +488,9 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 18,
     paddingTop: 4,
+  },
+  pageContent: {
+    paddingBottom: 22,
   },
   embeddedContainer: {
     paddingTop: 0,
@@ -729,10 +748,7 @@ const styles = StyleSheet.create({
     color: "#181a1c",
   },
   listWrap: {
-    flex: 1,
-  },
-  listContent: {
-    paddingBottom: 22,
+    width: "100%",
   },
   row: {
     minHeight: 46,
