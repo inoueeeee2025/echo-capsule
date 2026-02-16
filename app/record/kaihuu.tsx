@@ -1,6 +1,7 @@
 import ArchiveContent from "@/components/ArchiveContent";
 import RecordToolbar from "@/components/RecordToolbar";
 import { loadCapsules } from "@/src/capsules/storage";
+import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Slider from "@react-native-community/slider";
 import { Audio, AVPlaybackStatus } from "expo-av";
@@ -70,6 +71,7 @@ export default function KaihuuScreen() {
   const [isTextMode, setIsTextMode] = useState(false);
   const [showMainArchive, setShowMainArchive] = useState(false);
   const [archiveSettledToMain, setArchiveSettledToMain] = useState(false);
+  const [hasUnopenedInArchive, setHasUnopenedInArchive] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [positionMillis, setPositionMillis] = useState(0);
   const [isSliding, setIsSliding] = useState(false);
@@ -78,6 +80,7 @@ export default function KaihuuScreen() {
   const [durationMillis, setDurationMillis] = useState(MOCK_DURATION_MS);
   const [isLoaded, setIsLoaded] = useState(false);
   const [selectedCapsuleAudioUri, setSelectedCapsuleAudioUri] = useState<string | null>(null);
+  const [isSelectedCapsuleLocked, setIsSelectedCapsuleLocked] = useState(false);
   const [slideWidth, setSlideWidth] = useState(INITIAL_SLIDE_WIDTH);
   const [recordedDateKey, setRecordedDateKey] = useState<string | null>(null);
   const [line1Width, setLine1Width] = useState(0);
@@ -101,6 +104,14 @@ export default function KaihuuScreen() {
     } catch {}
   }, []);
 
+  const refreshUnopenedBadge = useCallback(async () => {
+    const nowMs = Date.now();
+    const list = await loadCapsules();
+    setHasUnopenedInArchive(
+      list.some((item) => item.openedAtMs == null && nowMs >= item.unlockAtMs),
+    );
+  }, []);
+
   useEffect(() => {
     loadRecordedDateKey();
   }, [loadRecordedDateKey]);
@@ -110,6 +121,12 @@ export default function KaihuuScreen() {
       loadRecordedDateKey();
     }
   }, [activeTab, loadRecordedDateKey]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshUnopenedBadge();
+    }, [refreshUnopenedBadge]),
+  );
 
   const unloadSound = useCallback(async () => {
     const current = soundRef.current;
@@ -151,7 +168,9 @@ export default function KaihuuScreen() {
       const list = await loadCapsules();
       if (!mounted) return;
       const capsule = list.find((item) => item.id === capsuleId) ?? null;
-      setSelectedCapsuleAudioUri(capsule?.audioUri ?? null);
+      const locked = capsule ? Date.now() < capsule.unlockAtMs : false;
+      setIsSelectedCapsuleLocked(locked);
+      setSelectedCapsuleAudioUri(!locked ? (capsule?.audioUri ?? null) : null);
       setPositionMillis(0);
       setSliderMillis(0);
       setDurationMillis(
@@ -236,6 +255,7 @@ export default function KaihuuScreen() {
   }, [activeDurationMillis, currentSliderValue, sliderWidth]);
 
   const togglePlay = useCallback(async () => {
+    if (capsuleId && isSelectedCapsuleLocked) return;
     if (!selectedCapsuleAudioUri) {
       setIsPlaying((prev) => !prev);
       return;
@@ -252,7 +272,7 @@ export default function KaihuuScreen() {
         await s.playAsync();
       }
     } catch {}
-  }, [durationMillis, isLoaded, isPlaying, positionMillis, selectedCapsuleAudioUri]);
+  }, [capsuleId, durationMillis, isLoaded, isPlaying, isSelectedCapsuleLocked, positionMillis, selectedCapsuleAudioUri]);
 
   const todayKey = toDateKey(new Date());
   const isLockedToday = recordedDateKey === todayKey;
@@ -428,6 +448,7 @@ export default function KaihuuScreen() {
               active={toolbarTab}
               onPressRec={switchToRecTab}
               onPressArchive={() => switchToArchiveTab(activeTab === "archive")}
+              hasUnopenedInArchive={hasUnopenedInArchive}
             />
           </View>
 
@@ -554,13 +575,13 @@ export default function KaihuuScreen() {
                     ) : (
                       <>
                         <View style={styles.centerArea}>
-                          <Pressable
-                            onPress={() => {
-                              void togglePlay();
-                            }}
-                            style={styles.playerButton}
-                            disabled={!!selectedCapsuleAudioUri && !isLoaded}
-                          >
+                            <Pressable
+                              onPress={() => {
+                                void togglePlay();
+                              }}
+                              style={styles.playerButton}
+                              disabled={isSelectedCapsuleLocked || (!!selectedCapsuleAudioUri && !isLoaded)}
+                            >
                             <Image
                               source={
                                 isPlaying
@@ -590,6 +611,7 @@ export default function KaihuuScreen() {
                                 onSlidingStart={() => setIsSliding(true)}
                                 onValueChange={setSliderMillis}
                                 onSlidingComplete={async (value) => {
+                                  if (capsuleId && isSelectedCapsuleLocked) return;
                                   setIsSliding(false);
                                   setSliderMillis(value);
                                   if (selectedCapsuleAudioUri) {
@@ -608,7 +630,7 @@ export default function KaihuuScreen() {
                                 thumbTintColor="transparent"
                                 thumbImage={TRANSPARENT_THUMB}
                                 style={styles.slider}
-                                disabled={!!selectedCapsuleAudioUri && !isLoaded}
+                                disabled={isSelectedCapsuleLocked || (!!selectedCapsuleAudioUri && !isLoaded)}
                               />
                               <View
                                 pointerEvents="none"

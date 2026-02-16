@@ -1,7 +1,9 @@
-﻿import RecordToolbar from "@/components/RecordToolbar";
+import RecordToolbar from "@/components/RecordToolbar";
+import { loadCapsules } from "@/src/capsules/storage";
+import { useFocusEffect } from "@react-navigation/native";
 import { useFonts } from "expo-font";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
   ImageBackground,
@@ -30,6 +32,7 @@ export default function KaihuuTextScreen() {
   });
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"rec" | "archive">("archive");
+  const [hasUnopenedInArchive, setHasUnopenedInArchive] = useState(false);
   const [line1Width, setLine1Width] = useState(0);
   const [line2Width, setLine2Width] = useState(0);
   const dateText = useMemo(() => formatDisplayDate(new Date()), []);
@@ -38,6 +41,20 @@ export default function KaihuuTextScreen() {
   const transcriptLine2 = "おはようございますー";
 
   const ydwStyle = ydwLoaded ? styles.ydwBananaslipPlus : undefined;
+  const refreshUnopenedBadge = useCallback(async () => {
+    const nowMs = Date.now();
+    const list = await loadCapsules();
+    setHasUnopenedInArchive(
+      list.some((item) => item.openedAtMs == null && nowMs >= item.unlockAtMs),
+    );
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshUnopenedBadge();
+    }, [refreshUnopenedBadge]),
+  );
+
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
@@ -74,70 +91,71 @@ export default function KaihuuTextScreen() {
       <GestureDetector gesture={panGesture}>
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.container}>
-          <Pressable
-            onPress={() => router.replace("/cassette")}
-            hitSlop={8}
-            style={styles.backToCassette}
-          >
-            <View style={styles.backToCassetteLabelWrap}>
-              <Text style={styles.backToCassetteText}>カセットモードへ</Text>
-              <View style={styles.backToCassetteUnderline} />
-            </View>
-          </Pressable>
-
-          <RecordToolbar
-            active={activeTab}
-            onPressRec={() => setActiveTab("rec")}
-            onPressArchive={() => setActiveTab("archive")}
-          />
-
-          <Text style={styles.dateText}>{dateText}</Text>
-
-          <ImageBackground
-            source={require("../../assets/images/textBoard.png")}
-            resizeMode="stretch"
-            style={styles.paperCard}
-          >
-            <ScrollView
-              style={styles.paperScroll}
-              contentContainerStyle={styles.paperScrollContent}
-              showsVerticalScrollIndicator={false}
+            <Pressable
+              onPress={() => router.replace("/cassette")}
+              hitSlop={8}
+              style={styles.backToCassette}
             >
-              <Text
-                style={[styles.lineText, ydwStyle]}
-                onTextLayout={(e) => {
-                  const w = e.nativeEvent.lines?.[0]?.width ?? 0;
-                  if (w > 0) setLine1Width(w);
-                }}
-              >
-                {transcriptLine1}
-              </Text>
-              <View style={[styles.line, { width: Math.max(1, (line1Width || 1) - 2) }]} />
-              <Text
-                style={[styles.lineText, styles.secondLineText, ydwStyle]}
-                onTextLayout={(e) => {
-                  const w = e.nativeEvent.lines?.[0]?.width ?? 0;
-                  if (w > 0) setLine2Width(w);
-                }}
-              >
-                {transcriptLine2}
-              </Text>
-              <View style={[styles.lineWide, { width: Math.max(1, (line2Width || 1) - 2) }]} />
-            </ScrollView>
-          </ImageBackground>
+              <View style={styles.backToCassetteLabelWrap}>
+                <Text style={styles.backToCassetteText}>カセットモードへ</Text>
+                <View style={styles.backToCassetteUnderline} />
+              </View>
+            </Pressable>
 
-          <Pressable
-            style={styles.audioModeLink}
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace("/record/kaihuu");
-              }
-            }}
-          >
-            <Text style={styles.audioModeLinkText}>音声モードへ</Text>
-          </Pressable>
+            <RecordToolbar
+              active={activeTab}
+              onPressRec={() => setActiveTab("rec")}
+              onPressArchive={() => setActiveTab("archive")}
+              hasUnopenedInArchive={hasUnopenedInArchive}
+            />
+
+            <Text style={styles.dateText}>{dateText}</Text>
+
+            <ImageBackground
+              source={require("../../assets/images/textBoard.png")}
+              resizeMode="stretch"
+              style={styles.paperCard}
+            >
+              <ScrollView
+                style={styles.paperScroll}
+                contentContainerStyle={styles.paperScrollContent}
+                showsVerticalScrollIndicator={false}
+              >
+                <Text
+                  style={[styles.lineText, ydwStyle]}
+                  onTextLayout={(e) => {
+                    const w = e.nativeEvent.lines?.[0]?.width ?? 0;
+                    if (w > 0) setLine1Width(w);
+                  }}
+                >
+                  {transcriptLine1}
+                </Text>
+                <View style={[styles.line, { width: Math.max(1, (line1Width || 1) - 2) }]} />
+                <Text
+                  style={[styles.lineText, styles.secondLineText, ydwStyle]}
+                  onTextLayout={(e) => {
+                    const w = e.nativeEvent.lines?.[0]?.width ?? 0;
+                    if (w > 0) setLine2Width(w);
+                  }}
+                >
+                  {transcriptLine2}
+                </Text>
+                <View style={[styles.lineWide, { width: Math.max(1, (line2Width || 1) - 2) }]} />
+              </ScrollView>
+            </ImageBackground>
+
+            <Pressable
+              style={styles.audioModeLink}
+              onPress={() => {
+                if (router.canGoBack()) {
+                  router.back();
+                } else {
+                  router.replace("/record/kaihuu");
+                }
+              }}
+            >
+              <Text style={styles.audioModeLinkText}>音声モードへ</Text>
+            </Pressable>
           </View>
         </SafeAreaView>
       </GestureDetector>
@@ -229,7 +247,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 10,
     marginBottom: 56,
-    bottom:4,
+    bottom: 4,
   },
   audioModeLinkText: {
     fontSize: 13,
@@ -242,5 +260,3 @@ const styles = StyleSheet.create({
     fontFamily: "YDWbananaslipplus",
   },
 });
-
-

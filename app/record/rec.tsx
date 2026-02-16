@@ -1,13 +1,20 @@
-import RecordToolbar from "@/components/RecordToolbar";
+﻿import RecordToolbar from "@/components/RecordToolbar";
 import { ZenAntiqueSoft_400Regular } from "@expo-google-fonts/zen-antique-soft";
 import ArchiveContent from "@/components/ArchiveContent";
-import { addCapsule } from "@/src/capsules/storage";
+import TouchSvg from "@/assets/images/touch.svg";
+import {
+  addCapsule,
+  CapsuleRecord,
+  loadCapsules,
+  updateCapsule,
+} from "@/src/capsules/storage";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Slider from "@react-native-community/slider";
 import { Audio, AVPlaybackStatus } from "expo-av";
 import { useFonts } from "expo-font";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
@@ -54,6 +61,8 @@ const NOREC_BUTTON_NUDGE_Y = -20;
 const TRANSPARENT_THUMB = {
   uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO6p8N8AAAAASUVORK5CYII=",
 };
+const LETTER_IMAGE = require("../../assets/images/letter.png");
+const LETTER_BACKGROUND_IMAGE = require("../../assets/images/letter_background.png");
 const RECORDED_DATE_STORAGE_KEY = "recordedDateKey";
 const TAB_SWIPE_THRESHOLD = 28;
 let didDevBootResetRecordedDateKey = false;
@@ -84,6 +93,7 @@ function formatMillis(millis: number): string {
 export default function RecordDoneScreen() {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isLandscapeViewport = windowWidth > windowHeight;
+  const router = useRouter();
 
   const [zenAntiqueSoftLoaded] = useFonts({
     ZenAntiqueSoft_400Regular,
@@ -115,6 +125,9 @@ export default function RecordDoneScreen() {
   const [savedProjectName, setSavedProjectName] = useState("");
   const [isSaveComplete, setIsSaveComplete] = useState(false);
   const [activeTab, setActiveTab] = useState<"rec" | "archive">("rec");
+  const [unlockNoticeCapsule, setUnlockNoticeCapsule] = useState<CapsuleRecord | null>(null);
+  const [dismissedNoticeCapsuleIds, setDismissedNoticeCapsuleIds] = useState<string[]>([]);
+  const [hasUnopenedInArchive, setHasUnopenedInArchive] = useState(false);
   const [slideWidth, setSlideWidth] = useState(SCREEN_WIDTH);
 
   const pulse = useRef(new Animated.Value(1)).current;
@@ -138,7 +151,7 @@ export default function RecordDoneScreen() {
 
   const isRecording = recordStatus === STATUS.RECORDING;
   const todayKey = useMemo(() => toDateKey(now), [now]);
-  const isLockedToday = recordedDateKey === todayKey;
+  const isLockedToday = !__DEV__ && recordedDateKey === todayKey;
 
   const clearTimer = () => {
     if (intervalRef.current) {
@@ -464,6 +477,7 @@ export default function RecordDoneScreen() {
     }).start();
   }, [isSaveComplete, saveReveal]);
 
+
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -625,6 +639,60 @@ export default function RecordDoneScreen() {
         ? "本日の録音は完了しています。\n1年後のあなたは、どんな場所にいるかな？"
         : "長押しして録音しましょう";
   const isArchiveTab = activeTab === "archive";
+  const showUnlockNoticeOverlay =
+    activeTab === "rec" &&
+    flow === FLOW.RECORD &&
+    !isRecordPressing &&
+    !isRecording &&
+    !isProjectModalVisible &&
+    !isSaveComplete &&
+    !!unlockNoticeCapsule;
+  const unlockNoticeMessageDate = useMemo(() => {
+    if (!unlockNoticeCapsule) return "";
+    const d = new Date(unlockNoticeCapsule.unlockAtMs);
+    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+  }, [unlockNoticeCapsule]);
+
+  const refreshUnlockNotice = useCallback(async () => {
+    const nowMs = Date.now();
+    const list = await loadCapsules();
+    setHasUnopenedInArchive(
+      list.some((item) => item.openedAtMs == null && nowMs >= item.unlockAtMs),
+    );
+    const next =
+      list.find(
+        (item) =>
+          item.openedAtMs == null &&
+          nowMs >= item.unlockAtMs &&
+          !dismissedNoticeCapsuleIds.includes(item.id),
+      ) ?? null;
+    setUnlockNoticeCapsule(next);
+    if (next && activeTab !== "rec" && flow === FLOW.RECORD) {
+      setActiveTab("rec");
+    }
+  }, [activeTab, dismissedNoticeCapsuleIds, flow]);
+
+  const closeUnlockNotice = useCallback(() => {
+    if (!unlockNoticeCapsule) return;
+    setDismissedNoticeCapsuleIds((prev) =>
+      prev.includes(unlockNoticeCapsule.id) ? prev : [...prev, unlockNoticeCapsule.id],
+    );
+    setUnlockNoticeCapsule(null);
+  }, [unlockNoticeCapsule]);
+
+  const openUnlockNoticeCapsule = useCallback(async () => {
+    if (!unlockNoticeCapsule) return;
+    const capsuleId = unlockNoticeCapsule.id;
+    try {
+      await updateCapsule(capsuleId, { openedAtMs: Date.now() });
+    } catch {}
+    setUnlockNoticeCapsule(null);
+    router.push({
+      pathname: "/record/kaihuu",
+      params: { capsuleId },
+    });
+  }, [router, unlockNoticeCapsule]);
+
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
@@ -656,7 +724,8 @@ export default function RecordDoneScreen() {
   useFocusEffect(
     useCallback(() => {
       Keyboard.dismiss();
-    }, []),
+      void refreshUnlockNotice();
+    }, [refreshUnlockNotice]),
   );
 
   useEffect(() => {
@@ -664,6 +733,32 @@ export default function RecordDoneScreen() {
       Keyboard.dismiss();
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (
+      activeTab !== "rec" ||
+      flow !== FLOW.RECORD ||
+      isRecordPressing ||
+      isRecording ||
+      isProjectModalVisible ||
+      isSaveComplete
+    ) {
+      return;
+    }
+    void refreshUnlockNotice();
+    const id = setInterval(() => {
+      void refreshUnlockNotice();
+    }, 1000);
+    return () => clearInterval(id);
+  }, [
+    activeTab,
+    flow,
+    isRecordPressing,
+    isRecording,
+    isProjectModalVisible,
+    isSaveComplete,
+    refreshUnlockNotice,
+  ]);
 
   if (isLandscapeViewport) {
     return <View style={styles.orientationTransitionGuard} />;
@@ -734,11 +829,12 @@ export default function RecordDoneScreen() {
                 </View>
               ) : null}
 
-              <RecordToolbar
-                active={activeTab}
-                onPressRec={() => setActiveTab("rec")}
-                onPressArchive={() => setActiveTab("archive")}
-              />
+            <RecordToolbar
+              active={activeTab}
+              onPressRec={() => setActiveTab("rec")}
+              onPressArchive={() => setActiveTab("archive")}
+              hasUnopenedInArchive={hasUnopenedInArchive}
+            />
             </View>
 
             <View
@@ -916,7 +1012,7 @@ export default function RecordDoneScreen() {
             </View>
           </View>
 
-          {(isProjectModalVisible || isSaveComplete) && (
+          {(isProjectModalVisible || isSaveComplete || showUnlockNoticeOverlay) && (
             <View style={styles.dimLayer} />
           )}
 
@@ -1064,6 +1160,56 @@ export default function RecordDoneScreen() {
               </View>
             </View>
           </Modal>
+          {showUnlockNoticeOverlay ? (
+            <View style={styles.unlockOverlay}>
+              <Image
+                source={LETTER_BACKGROUND_IMAGE}
+                style={styles.unlockOverlayBackgroundImage}
+                resizeMode="stretch"
+              />
+              <View style={styles.unlockOverlayTop}>
+                <Pressable onPress={closeUnlockNotice} hitSlop={10}>
+                  <Text style={styles.unlockOverlayCloseIcon}>×</Text>
+                  <Text
+                    style={[
+                      styles.unlockOverlayCloseLabel,
+                      zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
+                    ]}
+                  >
+                    閉じる
+                  </Text>
+                </Pressable>
+              </View>
+              <View style={styles.unlockOverlayContent}>
+                <Text
+                  style={[
+                    styles.unlockOverlayMessage,
+                    zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
+                  ]}
+                >
+                  {`${unlockNoticeMessageDate}のあなたのカプセルを開封できます。`}
+                </Text>
+                <Pressable
+                  onPress={() => {
+                    void openUnlockNoticeCapsule();
+                  }}
+                  style={styles.unlockOverlayLetterButton}
+                  hitSlop={10}
+                >
+                  <Image
+                    source={LETTER_IMAGE}
+                    style={styles.unlockOverlayLetterImage}
+                    resizeMode="contain"
+                  />
+                </Pressable>
+                <TouchSvg
+                  width={styles.unlockOverlayTouchImage.width}
+                  height={styles.unlockOverlayTouchImage.height}
+                  style={styles.unlockOverlayTouchImage}
+                />
+              </View>
+            </View>
+          ) : null}
           </View>
         </SafeAreaView>
       </GestureDetector>
@@ -1411,6 +1557,65 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.3,
     marginTop: -15,
+  },
+  unlockOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 45,
+    elevation: 45,
+    backgroundColor: "transparent",
+  },
+  unlockOverlayBackgroundImage: {
+    position: "absolute",
+    top: -60,
+    right: 0,
+    bottom: -120,
+    left: 0,
+    zIndex: 0,
+  },
+  unlockOverlayTop: {
+    paddingTop: 22,
+    paddingHorizontal: 10,
+    zIndex: 1,
+  },
+  unlockOverlayCloseIcon: {
+    color: "#111111",
+    fontSize: 40,
+    lineHeight: 40,
+    marginLeft:18,
+    marginTop:-27  },
+  unlockOverlayCloseLabel: {
+    color: "#111111",
+    fontSize: 15,
+    marginTop: -8,
+    marginLeft:10,
+  },
+  unlockOverlayContent: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    marginTop: -36,
+    zIndex: 1,
+  },
+  unlockOverlayMessage: {
+    color: "#000000",
+    fontSize: 20,
+    fontWeight: "900",
+    textAlign: "center",
+    marginBottom: -10,
+  },
+  unlockOverlayLetterButton: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  unlockOverlayLetterImage: {
+    width: 250 ,
+    height: 250,
+  },
+  unlockOverlayTouchImage: {
+    marginTop: -50,
+    width: 132,
+    height: 98,
   },
 });
 

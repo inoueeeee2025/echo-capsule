@@ -2,7 +2,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PlayCircleSvg from "@/assets/images/Play_circle.svg";
-import { loadCapsules, toDateKeyFromMs } from "@/src/capsules/storage";
+import { loadCapsules, toDateKeyFromMs, updateCapsule } from "@/src/capsules/storage";
 import {
   Alert,
   Image,
@@ -23,6 +23,7 @@ type RecordingItem = {
   date: string;
   hasTranscript: boolean;
   isLocked: boolean;
+  isUnopened: boolean;
   source: "dummy" | "capsule";
 };
 
@@ -51,20 +52,21 @@ const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const LIST_TITLE_NUDGE_X = 2;
 const LIST_TITLE_NUDGE_Y = -3;
 const LIST_TITLE_WEIGHT = "400" as const;
+const GREEN_DOT_IMAGE = require("../assets/images/green.png");
 
 const DUMMY_RECORDINGS: RecordingItem[] = [
-  { id: "r1", title: "project 1", durationSec: 230, date: "2027-01-31", hasTranscript: true, isLocked: false, source: "dummy" },
-  { id: "r2", title: "project 1", durationSec: 230, date: "2027-01-31", hasTranscript: true, isLocked: false, source: "dummy" },
-  { id: "r3", title: "project 1", durationSec: 230, date: "2027-01-31", hasTranscript: true, isLocked: false, source: "dummy" },
-  { id: "r4", title: "design memo", durationSec: 186, date: "2025-09-16", hasTranscript: false, isLocked: false, source: "dummy" },
-  { id: "r5", title: "morning log", durationSec: 143, date: "2025-09-16", hasTranscript: true, isLocked: false, source: "dummy" },
-  { id: "r6", title: "weekly review", durationSec: 301, date: "2025-09-25", hasTranscript: true, isLocked: false, source: "dummy" },
-  { id: "r7", title: "brainstorm", durationSec: 208, date: "2025-09-11", hasTranscript: false, isLocked: false, source: "dummy" },
-  { id: "r8", title: "interview", durationSec: 355, date: "2025-09-01", hasTranscript: true, isLocked: false, source: "dummy" },
-  { id: "r9", title: "afternoon log", durationSec: 122, date: "2025-08-30", hasTranscript: false, isLocked: false, source: "dummy" },
-  { id: "r10", title: "user test", durationSec: 276, date: "2025-08-18", hasTranscript: true, isLocked: false, source: "dummy" },
-  { id: "r11", title: "project 2", durationSec: 264, date: "2025-07-07", hasTranscript: true, isLocked: false, source: "dummy" },
-  { id: "r12", title: "meeting", durationSec: 198, date: "2025-06-05", hasTranscript: false, isLocked: false, source: "dummy" },
+  { id: "r1", title: "project 1", durationSec: 230, date: "2027-01-31", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
+  { id: "r2", title: "project 1", durationSec: 230, date: "2027-01-31", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
+  { id: "r3", title: "project 1", durationSec: 230, date: "2027-01-31", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
+  { id: "r4", title: "design memo", durationSec: 186, date: "2025-09-16", hasTranscript: false, isLocked: false, isUnopened: false, source: "dummy" },
+  { id: "r5", title: "morning log", durationSec: 143, date: "2025-09-16", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
+  { id: "r6", title: "weekly review", durationSec: 301, date: "2025-09-25", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
+  { id: "r7", title: "brainstorm", durationSec: 208, date: "2025-09-11", hasTranscript: false, isLocked: false, isUnopened: false, source: "dummy" },
+  { id: "r8", title: "interview", durationSec: 355, date: "2025-09-01", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
+  { id: "r9", title: "afternoon log", durationSec: 122, date: "2025-08-30", hasTranscript: false, isLocked: false, isUnopened: false, source: "dummy" },
+  { id: "r10", title: "user test", durationSec: 276, date: "2025-08-18", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
+  { id: "r11", title: "project 2", durationSec: 264, date: "2025-07-07", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
+  { id: "r12", title: "meeting", durationSec: 198, date: "2025-06-05", hasTranscript: false, isLocked: false, isUnopened: false, source: "dummy" },
 ];
 
 function toDateKey(date: Date): string {
@@ -135,14 +137,31 @@ export default function ArchiveContent({
   const isSvgReady = typeof PlayCircleSvg !== "number";
   const router = useRouter();
   const [capsuleItems, setCapsuleItems] = useState<RecordingItem[]>([]);
+  const isCapsuleUnlockedNow = useCallback(async (capsuleId: string) => {
+    const list = await loadCapsules();
+    const target = list.find((item) => item.id === capsuleId);
+    if (!target) return false;
+    return Date.now() >= target.unlockAtMs;
+  }, []);
   const openTranscript = (item: RecordingItem) => {
     Keyboard.dismiss();
     if (item.isLocked) return;
     if (item.source === "capsule") {
-      router.push({
-        pathname: "/record/kaihuu",
-        params: { mode: "text", transcriptId: item.id, capsuleId: item.id },
-      });
+      void (async () => {
+        const unlocked = await isCapsuleUnlockedNow(item.id);
+        if (!unlocked) {
+          void reloadCapsules();
+          return;
+        }
+        if (item.isUnopened) {
+          await updateCapsule(item.id, { openedAtMs: Date.now() });
+          void reloadCapsules();
+        }
+        router.push({
+          pathname: "/record/kaihuu",
+          params: { mode: "text", transcriptId: item.id, capsuleId: item.id },
+        });
+      })();
       return;
     }
     if (onPressTranscript) {
@@ -157,10 +176,21 @@ export default function ArchiveContent({
   const openCassetteScreen = (item: RecordingItem) => {
     if (item.isLocked) return;
     if (item.source === "capsule") {
-      router.push({
-        pathname: "/record/kaihuu",
-        params: { capsuleId: item.id },
-      });
+      void (async () => {
+        const unlocked = await isCapsuleUnlockedNow(item.id);
+        if (!unlocked) {
+          void reloadCapsules();
+          return;
+        }
+        if (item.isUnopened) {
+          await updateCapsule(item.id, { openedAtMs: Date.now() });
+          void reloadCapsules();
+        }
+        router.push({
+          pathname: "/record/kaihuu",
+          params: { capsuleId: item.id },
+        });
+      })();
       return;
     }
     router.push("/cassette");
@@ -180,6 +210,7 @@ export default function ArchiveContent({
       date: toDateKeyFromMs(item.unlockAtMs),
       hasTranscript: item.hasTranscript,
       isLocked: nowMs < item.unlockAtMs,
+      isUnopened: item.openedAtMs == null,
       source: "capsule",
     }));
     setCapsuleItems(mapped);
@@ -190,6 +221,12 @@ export default function ArchiveContent({
       void reloadCapsules();
     }, [reloadCapsules]),
   );
+  useEffect(() => {
+    const id = setInterval(() => {
+      void reloadCapsules();
+    }, 1000);
+    return () => clearInterval(id);
+  }, [reloadCapsules]);
 
   const monthIndex = currentMonth.getMonth();
   const year = currentMonth.getFullYear();
@@ -207,8 +244,27 @@ export default function ArchiveContent({
       sortedLatest.filter((r) => r.date.startsWith(prefix)).map((r) => r.date),
     );
   }, [monthIndex, sortedLatest, year]);
+  const unlockedDateKeys = useMemo(() => {
+    const prefix = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+    return new Set(
+      sortedLatest
+        .filter((r) => r.date.startsWith(prefix) && !r.isLocked)
+        .map((r) => r.date),
+    );
+  }, [monthIndex, sortedLatest, year]);
+  const unopenedDotDateKeys = useMemo(() => {
+    const prefix = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+    return new Set(
+      sortedLatest
+        .filter((r) => r.date.startsWith(prefix) && !r.isLocked && r.isUnopened)
+        .map((r) => r.date),
+    );
+  }, [monthIndex, sortedLatest, year]);
 
-  const visibleBaseList = useMemo(() => sortedLatest.slice(0, 10), [sortedLatest]);
+  const visibleBaseList = useMemo(
+    () => sortedLatest.filter((item) => !item.isLocked).slice(0, 10),
+    [sortedLatest],
+  );
 
   const visibleList = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
@@ -218,7 +274,7 @@ export default function ArchiveContent({
 
   const selectedDateItems = useMemo(() => {
     if (!selectedDateKey) return [];
-    return sortedLatest.filter((item) => item.date === selectedDateKey);
+    return sortedLatest.filter((item) => item.date === selectedDateKey && !item.isLocked);
   }, [selectedDateKey, sortedLatest]);
 
   const cells = useMemo(() => createCalendarCells(year, monthIndex), [monthIndex, year]);
@@ -240,7 +296,7 @@ export default function ArchiveContent({
 
   const onSelectDay = (date: Date) => {
     const key = toDateKey(date);
-    const hasRecordingsOnDay = dotDateKeys.has(key);
+    const hasRecordingsOnDay = unlockedDateKeys.has(key);
     if (date.getMonth() !== monthIndex || date.getFullYear() !== year) {
       setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1));
     }
@@ -365,6 +421,7 @@ export default function ArchiveContent({
                 const inCurrentMonth =
                   date.getMonth() === monthIndex && date.getFullYear() === year;
                 const hasDot = dotDateKeys.has(key);
+                const hasUnopenedDot = unopenedDotDateKeys.has(key);
                 const isSelected = selectedDateKey === key;
                 return (
                   <Pressable key={key} style={styles.dayCell} onPress={() => onSelectDay(date)}>
@@ -373,7 +430,13 @@ export default function ArchiveContent({
                         {date.getDate()}
                       </Text>
                     </View>
-                    <View style={styles.dotArea}>{hasDot ? <View style={styles.dot} /> : null}</View>
+                    <View style={styles.dotArea}>
+                      {hasUnopenedDot ? (
+                        <Image source={GREEN_DOT_IMAGE} style={styles.unopenedDotImage} resizeMode="contain" />
+                      ) : hasDot ? (
+                        <View style={styles.dot} />
+                      ) : null}
+                    </View>
                   </Pressable>
                 );
               })}
@@ -439,6 +502,9 @@ export default function ArchiveContent({
       <View style={styles.listWrap}>
         {visibleList.map((item) => (
           <View key={item.id} style={styles.row}>
+            {item.isUnopened && !item.isLocked ? (
+              <Image source={GREEN_DOT_IMAGE} style={styles.rowMarkerImage} resizeMode="contain" />
+            ) : null}
             <Text style={styles.duration}>{formatDuration(item.durationSec)}</Text>
             <Text
               style={styles.title}
@@ -726,6 +792,10 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: "rgba(163, 165, 167, 0.9)",
   },
+  unopenedDotImage: {
+    width: 8,
+    height: 8,
+  },
   deliveryModalBackdrop: {
     position: "absolute",
     left: -2000,
@@ -807,6 +877,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 2,
     columnGap: 10,
+  },
+  rowMarkerImage: {
+    position: "absolute",
+    left: -16,
+    top: 18,
+    width: 9,
+    height: 9,
   },
   duration: {
     width: 44,

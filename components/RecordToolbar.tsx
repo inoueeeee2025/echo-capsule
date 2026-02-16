@@ -12,12 +12,14 @@ type RecordToolbarProps = {
   active: "rec" | "archive";
   onPressRec: () => void;
   onPressArchive: () => void;
+  hasUnopenedInArchive?: boolean;
 };
 
 export default function RecordToolbar({
   active,
   onPressRec,
   onPressArchive,
+  hasUnopenedInArchive = false,
 }: RecordToolbarProps) {
   const isArchive = active === "archive";
   const pillTranslateX = isArchive ? PILL_WIDTH - 6 + ARCHIVE_PILL_NUDGE_X : 0;
@@ -56,6 +58,13 @@ export default function RecordToolbar({
             ]}>
             archive
           </Text>
+          {hasUnopenedInArchive ? (
+            <Image
+              source={require("../assets/images/green.png")}
+              style={styles.unopenedDot}
+              resizeMode="contain"
+            />
+          ) : null}
         </View>
       </View>
     </View>
@@ -137,4 +146,11 @@ const styles = StyleSheet.create({
   toolbarTextRec: { left: REC_LABEL_LEFT },
   toolbarTextArchive: { left: ARCHIVE_LABEL_LEFT },
   toolbarTextOn: { color: "rgba(255, 255, 255, 0.75)" },
+  unopenedDot: {
+    position: "absolute",
+    right: 22,
+    top: 8,
+    width: 10,
+    height: 10,
+  },
 });
