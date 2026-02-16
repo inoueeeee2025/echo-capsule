@@ -1,6 +1,7 @@
-﻿import RecordToolbar from "@/components/RecordToolbar";
+import RecordToolbar from "@/components/RecordToolbar";
 import { ZenAntiqueSoft_400Regular } from "@expo-google-fonts/zen-antique-soft";
 import ArchiveContent from "@/components/ArchiveContent";
+import { addCapsule } from "@/src/capsules/storage";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Slider from "@react-native-community/slider";
@@ -39,7 +40,7 @@ const FLOW = {
 
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const MAX_RECORDING_SECONDS = 300;
+const MAX_RECORDING_SECONDS = 180;
 const MAX_RECORDING_MS = MAX_RECORDING_SECONDS * 1000;
 const RECORDING_WARNING_MS = 170000; // 02:50
 const TIMER_INTERVAL_MS = 100;
@@ -328,15 +329,35 @@ export default function RecordDoneScreen() {
     setIsProjectModalVisible(false);
   }, []);
 
-  const saveProject = useCallback(() => {
+  const saveProject = useCallback(async () => {
     const baseDate = lastRecordedAtMs ? new Date(lastRecordedAtMs) : new Date();
     const fallbackName = `${baseDate.getFullYear()}/${baseDate.getMonth() + 1}/${baseDate.getDate()}`;
     const normalized = projectName.trim() || fallbackName;
+    const recordedAtMs = lastRecordedAtMs ?? Date.now();
+    const defaultUnlockDate = new Date(recordedAtMs);
+    defaultUnlockDate.setFullYear(defaultUnlockDate.getFullYear() + 1);
+    const unlockAtMs = __DEV__
+      ? recordedAtMs + 60 * 1000
+      : defaultUnlockDate.getTime();
+
+    if (lastRecordedUri) {
+      await addCapsule({
+        id: `capsule-${recordedAtMs}-${Math.random().toString(36).slice(2, 8)}`,
+        title: normalized,
+        audioUri: lastRecordedUri,
+        durationSec: Math.max(1, Math.floor((elapsedMs || 1000) / 1000)),
+        recordedAtMs,
+        unlockAtMs,
+        openedAtMs: null,
+        hasTranscript: true,
+      });
+    }
+
     setSavedProjectName(normalized);
     setActiveTab("rec");
     setIsProjectModalVisible(false);
     setIsSaveComplete(true);
-  }, [lastRecordedAtMs, projectName]);
+  }, [elapsedMs, lastRecordedAtMs, lastRecordedUri, projectName]);
 
   const saveProjectAndBack = useCallback(async () => {
     await unloadSound();

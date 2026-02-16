@@ -1,6 +1,8 @@
-﻿import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import PlayCircleSvg from "@/assets/images/Play_circle.svg";
+import { loadCapsules, toDateKeyFromMs } from "@/src/capsules/storage";
 import {
   Alert,
   Image,
@@ -20,6 +22,8 @@ type RecordingItem = {
   durationSec: number;
   date: string;
   hasTranscript: boolean;
+  isLocked: boolean;
+  source: "dummy" | "capsule";
 };
 
 type ArchiveContentProps = {
@@ -49,18 +53,18 @@ const LIST_TITLE_NUDGE_Y = -3;
 const LIST_TITLE_WEIGHT = "400" as const;
 
 const DUMMY_RECORDINGS: RecordingItem[] = [
-  { id: "r1", title: "project 1", durationSec: 230, date: "2027-01-31", hasTranscript: true },
-  { id: "r2", title: "project 1", durationSec: 230, date: "2027-01-31", hasTranscript: true },
-  { id: "r3", title: "project 1", durationSec: 230, date: "2027-01-31", hasTranscript: true },
-  { id: "r4", title: "design memo", durationSec: 186, date: "2025-09-16", hasTranscript: false },
-  { id: "r5", title: "morning log", durationSec: 143, date: "2025-09-16", hasTranscript: true },
-  { id: "r6", title: "weekly review", durationSec: 301, date: "2025-09-25", hasTranscript: true },
-  { id: "r7", title: "brainstorm", durationSec: 208, date: "2025-09-11", hasTranscript: false },
-  { id: "r8", title: "interview", durationSec: 355, date: "2025-09-01", hasTranscript: true },
-  { id: "r9", title: "afternoon log", durationSec: 122, date: "2025-08-30", hasTranscript: false },
-  { id: "r10", title: "user test", durationSec: 276, date: "2025-08-18", hasTranscript: true },
-  { id: "r11", title: "project 2", durationSec: 264, date: "2025-07-07", hasTranscript: true },
-  { id: "r12", title: "meeting", durationSec: 198, date: "2025-06-05", hasTranscript: false },
+  { id: "r1", title: "project 1", durationSec: 230, date: "2027-01-31", hasTranscript: true, isLocked: false, source: "dummy" },
+  { id: "r2", title: "project 1", durationSec: 230, date: "2027-01-31", hasTranscript: true, isLocked: false, source: "dummy" },
+  { id: "r3", title: "project 1", durationSec: 230, date: "2027-01-31", hasTranscript: true, isLocked: false, source: "dummy" },
+  { id: "r4", title: "design memo", durationSec: 186, date: "2025-09-16", hasTranscript: false, isLocked: false, source: "dummy" },
+  { id: "r5", title: "morning log", durationSec: 143, date: "2025-09-16", hasTranscript: true, isLocked: false, source: "dummy" },
+  { id: "r6", title: "weekly review", durationSec: 301, date: "2025-09-25", hasTranscript: true, isLocked: false, source: "dummy" },
+  { id: "r7", title: "brainstorm", durationSec: 208, date: "2025-09-11", hasTranscript: false, isLocked: false, source: "dummy" },
+  { id: "r8", title: "interview", durationSec: 355, date: "2025-09-01", hasTranscript: true, isLocked: false, source: "dummy" },
+  { id: "r9", title: "afternoon log", durationSec: 122, date: "2025-08-30", hasTranscript: false, isLocked: false, source: "dummy" },
+  { id: "r10", title: "user test", durationSec: 276, date: "2025-08-18", hasTranscript: true, isLocked: false, source: "dummy" },
+  { id: "r11", title: "project 2", durationSec: 264, date: "2025-07-07", hasTranscript: true, isLocked: false, source: "dummy" },
+  { id: "r12", title: "meeting", durationSec: 198, date: "2025-06-05", hasTranscript: false, isLocked: false, source: "dummy" },
 ];
 
 function toDateKey(date: Date): string {
@@ -130,39 +134,79 @@ export default function ArchiveContent({
 
   const isSvgReady = typeof PlayCircleSvg !== "number";
   const router = useRouter();
-  const openTranscript = (id: string) => {
+  const [capsuleItems, setCapsuleItems] = useState<RecordingItem[]>([]);
+  const openTranscript = (item: RecordingItem) => {
     Keyboard.dismiss();
-    if (onPressTranscript) {
-      onPressTranscript(id);
+    if (item.isLocked) return;
+    if (item.source === "capsule") {
+      router.push({
+        pathname: "/record/kaihuu",
+        params: { mode: "text", transcriptId: item.id, capsuleId: item.id },
+      });
       return;
     }
-    router.push({ pathname: "/record/kaihuu", params: { mode: "text", transcriptId: id } });
+    if (onPressTranscript) {
+      onPressTranscript(item.id);
+      return;
+    }
+    router.push({
+      pathname: "/record/kaihuu",
+      params: { mode: "text", transcriptId: item.id },
+    });
   };
-  const openCassetteScreen = () => {
+  const openCassetteScreen = (item: RecordingItem) => {
+    if (item.isLocked) return;
+    if (item.source === "capsule") {
+      router.push({
+        pathname: "/record/kaihuu",
+        params: { capsuleId: item.id },
+      });
+      return;
+    }
     router.push("/cassette");
   };
-  const [currentMonth, setCurrentMonth] = useState<Date>(new Date(2025, 8, 1));
+  const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
   const [searchText, setSearchText] = useState("");
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [yearPickerOpen, setYearPickerOpen] = useState(false);
+  const reloadCapsules = useCallback(async () => {
+    const nowMs = Date.now();
+    const capsules = await loadCapsules();
+    const mapped: RecordingItem[] = capsules.map((item) => ({
+      id: item.id,
+      title: item.title,
+      durationSec: item.durationSec,
+      date: toDateKeyFromMs(item.unlockAtMs),
+      hasTranscript: item.hasTranscript,
+      isLocked: nowMs < item.unlockAtMs,
+      source: "capsule",
+    }));
+    setCapsuleItems(mapped);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void reloadCapsules();
+    }, [reloadCapsules]),
+  );
 
   const monthIndex = currentMonth.getMonth();
   const year = currentMonth.getFullYear();
 
   const sortedLatest = useMemo(() => {
-    return [...DUMMY_RECORDINGS].sort((a, b) => {
+    return [...capsuleItems, ...DUMMY_RECORDINGS].sort((a, b) => {
       if (a.date === b.date) return b.id.localeCompare(a.id);
       return b.date.localeCompare(a.date);
     });
-  }, []);
+  }, [capsuleItems]);
 
   const dotDateKeys = useMemo(() => {
     const prefix = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
     return new Set(
-      DUMMY_RECORDINGS.filter((r) => r.date.startsWith(prefix)).map((r) => r.date),
+      sortedLatest.filter((r) => r.date.startsWith(prefix)).map((r) => r.date),
     );
-  }, [monthIndex, year]);
+  }, [monthIndex, sortedLatest, year]);
 
   const visibleBaseList = useMemo(() => sortedLatest.slice(0, 10), [sortedLatest]);
 
@@ -356,7 +400,7 @@ export default function ArchiveContent({
                   </Text>
                   <Pressable
                     style={styles.playButton}
-                    onPress={openCassetteScreen}
+                    onPress={() => openCassetteScreen(selectedDateItems[0])}
                     hitSlop={6}>
                     {isSvgReady ? (
                       <PlayCircleSvg width={18} height={18} />
@@ -365,12 +409,13 @@ export default function ArchiveContent({
                     )}
                   </Pressable>
                   <Pressable
-                    onPress={() => openTranscript(selectedDateItems[0].id)}
+                    onPress={() => openTranscript(selectedDateItems[0])}
                     hitSlop={6}>
                     <Text
                       style={[
                         styles.transcript,
-                        !selectedDateItems[0].hasTranscript && styles.transcriptDisabled,
+                        (!selectedDateItems[0].hasTranscript || selectedDateItems[0].isLocked) &&
+                          styles.transcriptDisabled,
                       ]}>
                       T
                     </Text>
@@ -405,7 +450,7 @@ export default function ArchiveContent({
 
             <Pressable
               style={styles.playButton}
-              onPress={openCassetteScreen}
+              onPress={() => openCassetteScreen(item)}
               hitSlop={6}>
               {isSvgReady ? (
                 <PlayCircleSvg width={18} height={18} />
@@ -415,9 +460,13 @@ export default function ArchiveContent({
             </Pressable>
 
             <Pressable
-              onPress={() => openTranscript(item.id)}
+              onPress={() => openTranscript(item)}
               hitSlop={6}>
-              <Text style={[styles.transcript, !item.hasTranscript && styles.transcriptDisabled]}>
+              <Text
+                style={[
+                  styles.transcript,
+                  (!item.hasTranscript || item.isLocked) && styles.transcriptDisabled,
+                ]}>
                 T
               </Text>
             </Pressable>
@@ -802,7 +851,7 @@ const styles = StyleSheet.create({
     marginLeft: 2,
   },
   transcriptDisabled: {
-    color: "#1d2022",
+    color: "#9a9da1",
   },
   emptyWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -845,4 +894,5 @@ const styles = StyleSheet.create({
     zIndex: 30,
   },
 })
+
 

@@ -1,7 +1,9 @@
-﻿import ArchiveContent from "@/components/ArchiveContent";
+import ArchiveContent from "@/components/ArchiveContent";
 import RecordToolbar from "@/components/RecordToolbar";
+import { loadCapsules } from "@/src/capsules/storage";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Slider from "@react-native-community/slider";
+import { Audio, AVPlaybackStatus } from "expo-av";
 import { useFonts } from "expo-font";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -56,7 +58,7 @@ function formatMillis(millis: number): string {
 }
 
 export default function KaihuuScreen() {
-  const params = useLocalSearchParams<{ mode?: string }>();
+  const params = useLocalSearchParams<{ mode?: string; capsuleId?: string; transcriptId?: string }>();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isLandscapeViewport = windowWidth > windowHeight;
   const [ydwLoaded] = useFonts({
@@ -68,16 +70,29 @@ export default function KaihuuScreen() {
   const [isTextMode, setIsTextMode] = useState(false);
   const [showMainArchive, setShowMainArchive] = useState(false);
   const [archiveSettledToMain, setArchiveSettledToMain] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [positionMillis, setPositionMillis] = useState(0);
   const [isSliding, setIsSliding] = useState(false);
   const [sliderMillis, setSliderMillis] = useState(0);
   const [sliderWidth, setSliderWidth] = useState(0);
+  const [durationMillis, setDurationMillis] = useState(MOCK_DURATION_MS);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [selectedCapsuleAudioUri, setSelectedCapsuleAudioUri] = useState<string | null>(null);
   const [slideWidth, setSlideWidth] = useState(INITIAL_SLIDE_WIDTH);
   const [recordedDateKey, setRecordedDateKey] = useState<string | null>(null);
   const [line1Width, setLine1Width] = useState(0);
   const [line2Width, setLine2Width] = useState(0);
   const slideX = useRef(new Animated.Value(-INITIAL_SLIDE_WIDTH)).current;
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const capsuleId = useMemo(() => {
+    if (typeof params.capsuleId === "string" && params.capsuleId.length > 0) {
+      return params.capsuleId;
+    }
+    if (typeof params.transcriptId === "string" && params.transcriptId.length > 0) {
+      return params.transcriptId;
+    }
+    return "";
+  }, [params.capsuleId, params.transcriptId]);
 
   const loadRecordedDateKey = useCallback(async () => {
     try {
@@ -96,7 +111,90 @@ export default function KaihuuScreen() {
     }
   }, [activeTab, loadRecordedDateKey]);
 
+  const unloadSound = useCallback(async () => {
+    const current = soundRef.current;
+    soundRef.current = null;
+    if (current) {
+      try {
+        await current.unloadAsync();
+      } catch {}
+    }
+    setIsLoaded(false);
+  }, []);
+
+  const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
+    if (!status.isLoaded) {
+      setIsLoaded(false);
+      setIsPlaying(false);
+      setPositionMillis(0);
+      setDurationMillis(MOCK_DURATION_MS);
+      if (!isSliding) setSliderMillis(0);
+      return;
+    }
+    setIsLoaded(true);
+    setIsPlaying(status.isPlaying);
+    setPositionMillis(status.positionMillis ?? 0);
+    setDurationMillis(status.durationMillis ?? MOCK_DURATION_MS);
+    if (!isSliding) setSliderMillis(status.positionMillis ?? 0);
+  }, [isSliding]);
+
   useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!capsuleId) {
+        setSelectedCapsuleAudioUri(null);
+        setDurationMillis(MOCK_DURATION_MS);
+        setPositionMillis(0);
+        setSliderMillis(0);
+        return;
+      }
+      const list = await loadCapsules();
+      if (!mounted) return;
+      const capsule = list.find((item) => item.id === capsuleId) ?? null;
+      setSelectedCapsuleAudioUri(capsule?.audioUri ?? null);
+      setPositionMillis(0);
+      setSliderMillis(0);
+      setDurationMillis(
+        capsule?.durationSec ? Math.max(1, capsule.durationSec) * 1000 : MOCK_DURATION_MS,
+      );
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [capsuleId]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!selectedCapsuleAudioUri) {
+        await unloadSound();
+        return;
+      }
+      try {
+        await unloadSound();
+        const created = await Audio.Sound.createAsync(
+          { uri: selectedCapsuleAudioUri },
+          { shouldPlay: false, progressUpdateIntervalMillis: 200 },
+          onPlaybackStatusUpdate,
+        );
+        if (!mounted) {
+          await created.sound.unloadAsync();
+          return;
+        }
+        soundRef.current = created.sound;
+      } catch {
+        setIsLoaded(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+      unloadSound().catch(() => {});
+    };
+  }, [onPlaybackStatusUpdate, selectedCapsuleAudioUri, unloadSound]);
+
+  useEffect(() => {
+    if (selectedCapsuleAudioUri) return;
     if (!isPlaying || isSliding) return;
     const id = setInterval(() => {
       setPositionMillis((prev) => {
@@ -109,7 +207,7 @@ export default function KaihuuScreen() {
       });
     }, 100);
     return () => clearInterval(id);
-  }, [isPlaying, isSliding]);
+  }, [isPlaying, isSliding, selectedCapsuleAudioUri]);
 
   useEffect(() => {
     Animated.timing(slideX, {
@@ -125,14 +223,36 @@ export default function KaihuuScreen() {
     () => formatMillis(currentSliderValue),
     [currentSliderValue],
   );
+  const activeDurationMillis = selectedCapsuleAudioUri
+    ? Math.max(durationMillis, 1)
+    : MOCK_DURATION_MS;
   const thumbLeft = useMemo(() => {
-    if (sliderWidth <= 0 || MOCK_DURATION_MS <= 0) return 0;
+    if (sliderWidth <= 0 || activeDurationMillis <= 0) return 0;
     const ratio = Math.min(
       1,
-      Math.max(0, currentSliderValue / MOCK_DURATION_MS),
+      Math.max(0, currentSliderValue / activeDurationMillis),
     );
     return ratio * sliderWidth;
-  }, [currentSliderValue, sliderWidth]);
+  }, [activeDurationMillis, currentSliderValue, sliderWidth]);
+
+  const togglePlay = useCallback(async () => {
+    if (!selectedCapsuleAudioUri) {
+      setIsPlaying((prev) => !prev);
+      return;
+    }
+    const s = soundRef.current;
+    if (!s || !isLoaded) return;
+    try {
+      if (isPlaying) {
+        await s.pauseAsync();
+      } else {
+        if (durationMillis > 0 && positionMillis >= durationMillis - 250) {
+          await s.setPositionAsync(0);
+        }
+        await s.playAsync();
+      }
+    } catch {}
+  }, [durationMillis, isLoaded, isPlaying, positionMillis, selectedCapsuleAudioUri]);
 
   const todayKey = toDateKey(new Date());
   const isLockedToday = recordedDateKey === todayKey;
@@ -210,6 +330,19 @@ export default function KaihuuScreen() {
     if (!resolved?.uri) return;
     Image.prefetch(resolved.uri).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!isTextMode || !selectedCapsuleAudioUri) return;
+    const s = soundRef.current;
+    if (!s) return;
+    s.pauseAsync().catch(() => {});
+  }, [isTextMode, selectedCapsuleAudioUri]);
+
+  useEffect(() => {
+    return () => {
+      unloadSound().catch(() => {});
+    };
+  }, [unloadSound]);
 
   if (isLandscapeViewport) {
     return (
@@ -422,8 +555,11 @@ export default function KaihuuScreen() {
                       <>
                         <View style={styles.centerArea}>
                           <Pressable
-                            onPress={() => setIsPlaying((prev) => !prev)}
+                            onPress={() => {
+                              void togglePlay();
+                            }}
                             style={styles.playerButton}
+                            disabled={!!selectedCapsuleAudioUri && !isLoaded}
                           >
                             <Image
                               source={
@@ -450,13 +586,21 @@ export default function KaihuuScreen() {
                               <Slider
                                 value={currentSliderValue}
                                 minimumValue={0}
-                                maximumValue={MOCK_DURATION_MS}
+                                maximumValue={activeDurationMillis}
                                 onSlidingStart={() => setIsSliding(true)}
                                 onValueChange={setSliderMillis}
-                                onSlidingComplete={(value) => {
+                                onSlidingComplete={async (value) => {
                                   setIsSliding(false);
                                   setSliderMillis(value);
-                                  setPositionMillis(value);
+                                  if (selectedCapsuleAudioUri) {
+                                    const s = soundRef.current;
+                                    if (!s || !isLoaded) return;
+                                    try {
+                                      await s.setPositionAsync(value);
+                                    } catch {}
+                                  } else {
+                                    setPositionMillis(value);
+                                  }
                                 }}
                                 tapToSeek
                                 minimumTrackTintColor="#a7a2ae"
@@ -464,6 +608,7 @@ export default function KaihuuScreen() {
                                 thumbTintColor="transparent"
                                 thumbImage={TRANSPARENT_THUMB}
                                 style={styles.slider}
+                                disabled={!!selectedCapsuleAudioUri && !isLoaded}
                               />
                               <View
                                 pointerEvents="none"

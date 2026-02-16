@@ -1,4 +1,4 @@
-﻿import {
+import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider,
@@ -25,6 +25,10 @@ export default function RootLayout() {
           />
           <Stack.Screen
             name="record/kaihuu-text"
+            options={{ orientation: "portrait", animation: "slide_from_right" }}
+          />
+          <Stack.Screen
+            name="record/open"
             options={{ orientation: "portrait", animation: "slide_from_right" }}
           />
           <Stack.Screen
