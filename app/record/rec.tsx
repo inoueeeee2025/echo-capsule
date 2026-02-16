@@ -64,6 +64,7 @@ const TRANSPARENT_THUMB = {
 const LETTER_IMAGE = require("../../assets/images/letter.png");
 const LETTER_BACKGROUND_IMAGE = require("../../assets/images/letter_background.png");
 const RECORDED_DATE_STORAGE_KEY = "recordedDateKey";
+const DISMISSED_NOTICE_IDS_STORAGE_KEY = "dismissedUnlockNoticeIds";
 const TAB_SWIPE_THRESHOLD = 28;
 let didDevBootResetRecordedDateKey = false;
 
@@ -126,13 +127,14 @@ export default function RecordDoneScreen() {
   const [isSaveComplete, setIsSaveComplete] = useState(false);
   const [activeTab, setActiveTab] = useState<"rec" | "archive">("rec");
   const [unlockNoticeCapsule, setUnlockNoticeCapsule] = useState<CapsuleRecord | null>(null);
-  const [dismissedNoticeCapsuleIds, setDismissedNoticeCapsuleIds] = useState<string[]>([]);
   const [hasUnopenedInArchive, setHasUnopenedInArchive] = useState(false);
   const [slideWidth, setSlideWidth] = useState(SCREEN_WIDTH);
+  const [isDismissedNoticeIdsReady, setIsDismissedNoticeIdsReady] = useState(false);
 
   const pulse = useRef(new Animated.Value(1)).current;
   const saveReveal = useRef(new Animated.Value(0)).current;
   const slideX = useRef(new Animated.Value(0)).current;
+  const dismissedNoticeIdsRef = useRef<Set<string>>(new Set());
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingStartRef = useRef(0);
@@ -151,7 +153,7 @@ export default function RecordDoneScreen() {
 
   const isRecording = recordStatus === STATUS.RECORDING;
   const todayKey = useMemo(() => toDateKey(now), [now]);
-  const isLockedToday = !__DEV__ && recordedDateKey === todayKey;
+  const isLockedToday = false;
 
   const clearTimer = () => {
     if (intervalRef.current) {
@@ -237,7 +239,6 @@ export default function RecordDoneScreen() {
   const startRecording = async () => {
     if (
       recordStatusRef.current === STATUS.RECORDING ||
-      isLockedToday ||
       flow !== FLOW.RECORD
     ) {
       setIsRecordPressing(false);
@@ -653,32 +654,64 @@ export default function RecordDoneScreen() {
     return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
   }, [unlockNoticeCapsule]);
 
+  const persistDismissedNoticeIds = useCallback(async () => {
+    try {
+      const ids = Array.from(dismissedNoticeIdsRef.current);
+      await AsyncStorage.setItem(
+        DISMISSED_NOTICE_IDS_STORAGE_KEY,
+        JSON.stringify(ids),
+      );
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(DISMISSED_NOTICE_IDS_STORAGE_KEY);
+        if (mounted && raw) {
+          const parsed: unknown = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const ids = parsed.filter(
+              (item): item is string => typeof item === "string" && item.length > 0,
+            );
+            dismissedNoticeIdsRef.current = new Set(ids);
+          }
+        }
+      } catch {}
+      if (mounted) {
+        setIsDismissedNoticeIdsReady(true);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const refreshUnlockNotice = useCallback(async () => {
+    if (!isDismissedNoticeIdsReady) return;
     const nowMs = Date.now();
     const list = await loadCapsules();
-    setHasUnopenedInArchive(
-      list.some((item) => item.openedAtMs == null && nowMs >= item.unlockAtMs),
+    const unlockedPending = list.filter(
+      (item) => item.openedAtMs == null && nowMs >= item.unlockAtMs,
     );
+    setHasUnopenedInArchive(unlockedPending.length > 0);
+    if (unlockNoticeCapsule) return;
     const next =
-      list.find(
-        (item) =>
-          item.openedAtMs == null &&
-          nowMs >= item.unlockAtMs &&
-          !dismissedNoticeCapsuleIds.includes(item.id),
-      ) ?? null;
+      unlockedPending.find((item) => !dismissedNoticeIdsRef.current.has(item.id)) ?? null;
     setUnlockNoticeCapsule(next);
     if (next && activeTab !== "rec" && flow === FLOW.RECORD) {
       setActiveTab("rec");
     }
-  }, [activeTab, dismissedNoticeCapsuleIds, flow]);
+  }, [activeTab, flow, isDismissedNoticeIdsReady, unlockNoticeCapsule]);
 
-  const closeUnlockNotice = useCallback(() => {
+  const closeUnlockNotice = useCallback(async () => {
     if (!unlockNoticeCapsule) return;
-    setDismissedNoticeCapsuleIds((prev) =>
-      prev.includes(unlockNoticeCapsule.id) ? prev : [...prev, unlockNoticeCapsule.id],
-    );
+    dismissedNoticeIdsRef.current.add(unlockNoticeCapsule.id);
+    await persistDismissedNoticeIds();
+    setActiveTab("rec");
     setUnlockNoticeCapsule(null);
-  }, [unlockNoticeCapsule]);
+  }, [persistDismissedNoticeIds, unlockNoticeCapsule]);
 
   const openUnlockNoticeCapsule = useCallback(async () => {
     if (!unlockNoticeCapsule) return;
@@ -686,12 +719,15 @@ export default function RecordDoneScreen() {
     try {
       await updateCapsule(capsuleId, { openedAtMs: Date.now() });
     } catch {}
+    dismissedNoticeIdsRef.current.delete(capsuleId);
+    await persistDismissedNoticeIds();
     setUnlockNoticeCapsule(null);
+    void refreshUnlockNotice();
     router.push({
       pathname: "/record/kaihuu",
       params: { capsuleId },
     });
-  }, [router, unlockNoticeCapsule]);
+  }, [persistDismissedNoticeIds, refreshUnlockNotice, router, unlockNoticeCapsule]);
 
   const panGesture = useMemo(
     () =>
@@ -736,7 +772,6 @@ export default function RecordDoneScreen() {
 
   useEffect(() => {
     if (
-      activeTab !== "rec" ||
       flow !== FLOW.RECORD ||
       isRecordPressing ||
       isRecording ||
@@ -751,7 +786,6 @@ export default function RecordDoneScreen() {
     }, 1000);
     return () => clearInterval(id);
   }, [
-    activeTab,
     flow,
     isRecordPressing,
     isRecording,
@@ -1162,13 +1196,19 @@ export default function RecordDoneScreen() {
           </Modal>
           {showUnlockNoticeOverlay ? (
             <View style={styles.unlockOverlay}>
-              <Image
-                source={LETTER_BACKGROUND_IMAGE}
-                style={styles.unlockOverlayBackgroundImage}
-                resizeMode="stretch"
-              />
+              <View pointerEvents="none" style={styles.unlockOverlayBackgroundImage}>
+                <Image
+                  source={LETTER_BACKGROUND_IMAGE}
+                  style={styles.unlockOverlayBackgroundImageFill}
+                  resizeMode="stretch"
+                />
+              </View>
               <View style={styles.unlockOverlayTop}>
-                <Pressable onPress={closeUnlockNotice} hitSlop={10}>
+                <Pressable
+                  onPress={closeUnlockNotice}
+                  hitSlop={20}
+                  style={styles.unlockOverlayCloseButton}
+                >
                   <Text style={styles.unlockOverlayCloseIcon}>×</Text>
                   <Text
                     style={[
@@ -1572,10 +1612,27 @@ const styles = StyleSheet.create({
     left: 0,
     zIndex: 0,
   },
+  unlockOverlayBackgroundImageFill: {
+    width: "100%",
+    height: "100%",
+  },
   unlockOverlayTop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
     paddingTop: 22,
     paddingHorizontal: 10,
-    zIndex: 1,
+    zIndex: 5,
+    elevation: 60,
+  },
+  unlockOverlayCloseButton: {
+    alignSelf: "flex-start",
+    minWidth: 120,
+    minHeight: 120,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    justifyContent: "flex-start",
   },
   unlockOverlayCloseIcon: {
     color: "#111111",
@@ -1594,7 +1651,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 24,
-    marginTop: -36,
+    marginTop: -20,
     zIndex: 1,
   },
   unlockOverlayMessage: {
