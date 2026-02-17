@@ -11,7 +11,17 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Slider from "@react-native-community/slider";
-import { Audio, AVPlaybackStatus } from "expo-av";
+import {
+  createAudioPlayer,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  setIsAudioActiveAsync,
+  RecordingPresets,
+  type AudioPlayer,
+  type AudioRecorder,
+  type AudioStatus,
+  useAudioRecorder,
+} from "expo-audio";
 import { useFonts } from "expo-font";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -135,11 +145,13 @@ export default function RecordDoneScreen() {
   const saveReveal = useRef(new Animated.Value(0)).current;
   const slideX = useRef(new Animated.Value(0)).current;
   const dismissedNoticeIdsRef = useRef<Set<string>>(new Set());
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingStartRef = useRef(0);
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const recordingRef = useRef<AudioRecorder | null>(null);
+  const soundRef = useRef<AudioPlayer | null>(null);
+  const playbackSubscriptionRef = useRef<{ remove: () => void } | null>(null);
   const autoStoppingRef = useRef(false);
   const isSlidingRef = useRef(false);
 
@@ -163,11 +175,16 @@ export default function RecordDoneScreen() {
   };
 
   const unloadSound = useCallback(async () => {
+    playbackSubscriptionRef.current?.remove();
+    playbackSubscriptionRef.current = null;
     const s = soundRef.current;
     soundRef.current = null;
     if (s) {
       try {
-        await s.unloadAsync();
+        s.pause();
+      } catch {}
+      try {
+        s.remove();
       } catch {}
     }
     setIsLoaded(false);
@@ -177,7 +194,7 @@ export default function RecordDoneScreen() {
     setSliderMillis(0);
   }, []);
 
-  const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
+  const onPlaybackStatusUpdate = useCallback((status: AudioStatus) => {
     if (!status.isLoaded) {
       setIsLoaded(false);
       setIsPlaying(false);
@@ -187,10 +204,12 @@ export default function RecordDoneScreen() {
       return;
     }
     setIsLoaded(true);
-    setIsPlaying(status.isPlaying);
-    setPositionMillis(status.positionMillis ?? 0);
-    setDurationMillis(status.durationMillis ?? 0);
-    if (!isSlidingRef.current) setSliderMillis(status.positionMillis ?? 0);
+    setIsPlaying(status.playing);
+    const nextPositionMillis = Math.floor((status.currentTime ?? 0) * 1000);
+    const nextDurationMillis = Math.floor((status.duration ?? 0) * 1000);
+    setPositionMillis(nextPositionMillis);
+    setDurationMillis(nextDurationMillis);
+    if (!isSlidingRef.current) setSliderMillis(nextPositionMillis);
   }, []);
 
   const stopRecording = useCallback(async (): Promise<{
@@ -213,12 +232,12 @@ export default function RecordDoneScreen() {
     if (!recording) return null;
 
     try {
-      await recording.stopAndUnloadAsync();
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
+      await recording.stop();
+      await setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: true,
       });
-      const uri = recording.getURI();
+      const uri = recording.getStatus().url;
       if (!uri) return null;
 
       const recordedAtMs = Date.now();
@@ -246,20 +265,18 @@ export default function RecordDoneScreen() {
     }
 
     try {
-      const { granted } = await Audio.requestPermissionsAsync();
+      const { granted } = await requestRecordingPermissionsAsync();
       if (!granted) return;
 
       await unloadSound();
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
       });
 
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
-      );
-      await recording.startAsync();
+      const recording = recorder;
+      await recording.prepareToRecordAsync(RecordingPresets.HIGH_QUALITY);
+      recording.record();
       recordingRef.current = recording;
     } catch (error) {
       console.warn("[Record] start failed:", error);
@@ -304,7 +321,7 @@ export default function RecordDoneScreen() {
       const s = soundRef.current;
       if (!s || !isLoaded) return;
       try {
-        await s.setPositionAsync(value);
+        await s.seekTo(value / 1000);
       } catch {}
     },
     [isLoaded],
@@ -316,13 +333,13 @@ export default function RecordDoneScreen() {
 
     try {
       if (isPlaying) {
-        await s.pauseAsync();
+        s.pause();
         setIsPlaying(false);
       } else {
         if (durationMillis > 0 && positionMillis >= durationMillis - 250) {
-          await s.setPositionAsync(0);
+          await s.seekTo(0);
         }
-        await s.playAsync();
+        s.play();
         setIsPlaying(true);
       }
     } catch {}
@@ -332,7 +349,7 @@ export default function RecordDoneScreen() {
     const s = soundRef.current;
     if (s && isPlaying) {
       try {
-        await s.pauseAsync();
+        s.pause();
       } catch {}
     }
     setIsPlaying(false);
@@ -394,13 +411,13 @@ export default function RecordDoneScreen() {
     recordingRef.current = null;
     if (recording) {
       try {
-        await recording.stopAndUnloadAsync();
+        await recording.stop();
       } catch {}
     }
     try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
+      await setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: true,
       });
     } catch {}
 
@@ -437,10 +454,11 @@ export default function RecordDoneScreen() {
   }, [activeTab, slideWidth, slideX]);
 
   useEffect(() => {
-    Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      playsInSilentModeIOS: true,
+    setAudioModeAsync({
+      allowsRecording: false,
+      playsInSilentMode: true,
     }).catch(() => {});
+    setIsAudioActiveAsync(true).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -520,18 +538,21 @@ export default function RecordDoneScreen() {
       }
 
       try {
-        const created = await Audio.Sound.createAsync(
+        const player = createAudioPlayer(
           { uri: lastRecordedUri },
-          { shouldPlay: false, progressUpdateIntervalMillis: 200 },
-          onPlaybackStatusUpdate,
+          { updateInterval: 200 },
         );
+        const sub = player.addListener("playbackStatusUpdate", onPlaybackStatusUpdate);
 
         if (!mounted) {
-          await created.sound.unloadAsync();
+          sub.remove();
+          player.remove();
           return;
         }
 
-        soundRef.current = created.sound;
+        playbackSubscriptionRef.current = sub;
+        soundRef.current = player;
+        onPlaybackStatusUpdate(player.currentStatus);
       } catch (error) {
         console.warn("Audio load failed:", error);
       }
@@ -604,7 +625,7 @@ export default function RecordDoneScreen() {
       const recording = recordingRef.current;
       recordingRef.current = null;
       if (recording) {
-        recording.stopAndUnloadAsync().catch(() => {});
+        recording.stop().catch(() => {});
       }
       unloadSound().catch(() => {});
     };

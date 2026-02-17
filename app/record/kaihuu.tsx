@@ -4,7 +4,12 @@ import { loadCapsules } from "@/src/capsules/storage";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Slider from "@react-native-community/slider";
-import { Audio, AVPlaybackStatus } from "expo-av";
+import {
+  createAudioPlayer,
+  setIsAudioActiveAsync,
+  type AudioPlayer,
+  type AudioStatus,
+} from "expo-audio";
 import { useFonts } from "expo-font";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -86,7 +91,8 @@ export default function KaihuuScreen() {
   const [line1Width, setLine1Width] = useState(0);
   const [line2Width, setLine2Width] = useState(0);
   const slideX = useRef(new Animated.Value(-INITIAL_SLIDE_WIDTH)).current;
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioPlayer | null>(null);
+  const playbackSubscriptionRef = useRef<{ remove: () => void } | null>(null);
   const capsuleId = useMemo(() => {
     if (typeof params.capsuleId === "string" && params.capsuleId.length > 0) {
       return params.capsuleId;
@@ -129,17 +135,22 @@ export default function KaihuuScreen() {
   );
 
   const unloadSound = useCallback(async () => {
+    playbackSubscriptionRef.current?.remove();
+    playbackSubscriptionRef.current = null;
     const current = soundRef.current;
     soundRef.current = null;
     if (current) {
       try {
-        await current.unloadAsync();
+        current.pause();
+      } catch {}
+      try {
+        current.remove();
       } catch {}
     }
     setIsLoaded(false);
   }, []);
 
-  const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
+  const onPlaybackStatusUpdate = useCallback((status: AudioStatus) => {
     if (!status.isLoaded) {
       setIsLoaded(false);
       setIsPlaying(false);
@@ -149,10 +160,12 @@ export default function KaihuuScreen() {
       return;
     }
     setIsLoaded(true);
-    setIsPlaying(status.isPlaying);
-    setPositionMillis(status.positionMillis ?? 0);
-    setDurationMillis(status.durationMillis ?? MOCK_DURATION_MS);
-    if (!isSliding) setSliderMillis(status.positionMillis ?? 0);
+    setIsPlaying(status.playing);
+    const nextPositionMillis = Math.floor((status.currentTime ?? 0) * 1000);
+    const nextDurationMillis = Math.floor((status.duration ?? 0) * 1000);
+    setPositionMillis(nextPositionMillis);
+    setDurationMillis(nextDurationMillis > 0 ? nextDurationMillis : MOCK_DURATION_MS);
+    if (!isSliding) setSliderMillis(nextPositionMillis);
   }, [isSliding]);
 
   useEffect(() => {
@@ -192,16 +205,19 @@ export default function KaihuuScreen() {
       }
       try {
         await unloadSound();
-        const created = await Audio.Sound.createAsync(
+        const player = createAudioPlayer(
           { uri: selectedCapsuleAudioUri },
-          { shouldPlay: false, progressUpdateIntervalMillis: 200 },
-          onPlaybackStatusUpdate,
+          { updateInterval: 200 },
         );
+        const sub = player.addListener("playbackStatusUpdate", onPlaybackStatusUpdate);
         if (!mounted) {
-          await created.sound.unloadAsync();
+          sub.remove();
+          player.remove();
           return;
         }
-        soundRef.current = created.sound;
+        playbackSubscriptionRef.current = sub;
+        soundRef.current = player;
+        onPlaybackStatusUpdate(player.currentStatus);
       } catch {
         setIsLoaded(false);
       }
@@ -264,12 +280,12 @@ export default function KaihuuScreen() {
     if (!s || !isLoaded) return;
     try {
       if (isPlaying) {
-        await s.pauseAsync();
+        s.pause();
       } else {
         if (durationMillis > 0 && positionMillis >= durationMillis - 250) {
-          await s.setPositionAsync(0);
+          await s.seekTo(0);
         }
-        await s.playAsync();
+        s.play();
       }
     } catch {}
   }, [capsuleId, durationMillis, isLoaded, isPlaying, isSelectedCapsuleLocked, positionMillis, selectedCapsuleAudioUri]);
@@ -355,10 +371,13 @@ export default function KaihuuScreen() {
     if (!isTextMode || !selectedCapsuleAudioUri) return;
     const s = soundRef.current;
     if (!s) return;
-    s.pauseAsync().catch(() => {});
+    try {
+      s.pause();
+    } catch {}
   }, [isTextMode, selectedCapsuleAudioUri]);
 
   useEffect(() => {
+    setIsAudioActiveAsync(true).catch(() => {});
     return () => {
       unloadSound().catch(() => {});
     };
@@ -618,7 +637,7 @@ export default function KaihuuScreen() {
                                     const s = soundRef.current;
                                     if (!s || !isLoaded) return;
                                     try {
-                                      await s.setPositionAsync(value);
+                                      await s.seekTo(value / 1000);
                                     } catch {}
                                   } else {
                                     setPositionMillis(value);
