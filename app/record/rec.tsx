@@ -35,6 +35,7 @@ import {
   ImageBackground,
   Keyboard,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -137,12 +138,21 @@ export default function RecordDoneScreen() {
   const [isSaveComplete, setIsSaveComplete] = useState(false);
   const [activeTab, setActiveTab] = useState<"rec" | "archive">("rec");
   const [unlockNoticeCapsule, setUnlockNoticeCapsule] = useState<CapsuleRecord | null>(null);
+  const [isDevUnlockPreviewVisible, setIsDevUnlockPreviewVisible] = useState(false);
   const [hasUnopenedInArchive, setHasUnopenedInArchive] = useState(false);
   const [slideWidth, setSlideWidth] = useState(SCREEN_WIDTH);
   const [isDismissedNoticeIdsReady, setIsDismissedNoticeIdsReady] = useState(false);
 
   const pulse = useRef(new Animated.Value(1)).current;
   const saveReveal = useRef(new Animated.Value(0)).current;
+  const unlockOverlayOpacity = useRef(new Animated.Value(0)).current;
+  const unlockOverlayContentTranslateY = useRef(new Animated.Value(44)).current;
+  const unlockOverlayLetterScale = useRef(new Animated.Value(0.8)).current;
+  const unlockOverlayLetterPulseScale = useRef(new Animated.Value(1)).current;
+  const unlockOverlayCloseScale = useRef(new Animated.Value(0.8)).current;
+  const unlockOverlayTouchFloatY = useRef(new Animated.Value(0)).current;
+  const unlockOverlayLetterPulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const unlockOverlayTouchFloatLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const slideX = useRef(new Animated.Value(0)).current;
   const dismissedNoticeIdsRef = useRef<Set<string>>(new Set());
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -496,7 +506,6 @@ export default function RecordDoneScreen() {
     }).start();
   }, [isSaveComplete, saveReveal]);
 
-
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -668,12 +677,138 @@ export default function RecordDoneScreen() {
     !isRecording &&
     !isProjectModalVisible &&
     !isSaveComplete &&
-    !!unlockNoticeCapsule;
+    (!!unlockNoticeCapsule || isDevUnlockPreviewVisible);
   const unlockNoticeMessageDate = useMemo(() => {
-    if (!unlockNoticeCapsule) return "";
-    const d = new Date(unlockNoticeCapsule.unlockAtMs);
+    const sourceMs = unlockNoticeCapsule?.unlockAtMs ?? Date.now();
+    const d = new Date(sourceMs);
     return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
   }, [unlockNoticeCapsule]);
+
+  useEffect(() => {
+    if (!__DEV__ || Platform.OS !== "web") return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+      if (event.key.toLowerCase() !== "r") return;
+      setActiveTab("rec");
+      setIsDevUnlockPreviewVisible(true);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+
+  useEffect(() => {
+    const stopFloating = () => {
+      unlockOverlayLetterPulseLoopRef.current?.stop();
+      unlockOverlayTouchFloatLoopRef.current?.stop();
+      unlockOverlayLetterPulseLoopRef.current = null;
+      unlockOverlayTouchFloatLoopRef.current = null;
+      unlockOverlayLetterPulseScale.stopAnimation();
+      unlockOverlayTouchFloatY.stopAnimation();
+      unlockOverlayLetterPulseScale.setValue(1);
+      unlockOverlayTouchFloatY.setValue(0);
+    };
+
+    const startFloating = () => {
+      const letterPulseLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(unlockOverlayLetterPulseScale, {
+            toValue: 1.06,
+            duration: 1800,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(unlockOverlayLetterPulseScale, {
+            toValue: 1,
+            duration: 1800,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      const touchLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(unlockOverlayTouchFloatY, {
+            toValue: 10,
+            duration: 1800,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(unlockOverlayTouchFloatY, {
+            toValue: 0,
+            duration: 1800,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      unlockOverlayLetterPulseLoopRef.current = letterPulseLoop;
+      unlockOverlayTouchFloatLoopRef.current = touchLoop;
+      letterPulseLoop.start();
+      touchLoop.start();
+    };
+
+    if (!showUnlockNoticeOverlay) {
+      unlockOverlayOpacity.stopAnimation();
+      unlockOverlayContentTranslateY.stopAnimation();
+      unlockOverlayLetterScale.stopAnimation();
+      unlockOverlayCloseScale.stopAnimation();
+      stopFloating();
+      unlockOverlayOpacity.setValue(0);
+      unlockOverlayContentTranslateY.setValue(44);
+      unlockOverlayLetterScale.setValue(0.8);
+      unlockOverlayCloseScale.setValue(0.8);
+      return;
+    }
+
+    unlockOverlayOpacity.setValue(0);
+    unlockOverlayContentTranslateY.setValue(44);
+    unlockOverlayLetterScale.setValue(0.8);
+    unlockOverlayLetterPulseScale.setValue(1);
+    unlockOverlayCloseScale.setValue(0.8);
+    Animated.parallel([
+      Animated.timing(unlockOverlayOpacity, {
+        toValue: 1,
+        duration: 620,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(unlockOverlayContentTranslateY, {
+        toValue: 0,
+        duration: 860,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.spring(unlockOverlayLetterScale, {
+        toValue: 1,
+        tension: 42,
+        friction: 12,
+        useNativeDriver: true,
+      }),
+      Animated.spring(unlockOverlayCloseScale, {
+        toValue: 1,
+        tension: 42,
+        friction: 12,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (!finished) return;
+      startFloating();
+    });
+
+    return () => {
+      stopFloating();
+    };
+  }, [
+    showUnlockNoticeOverlay,
+    unlockOverlayCloseScale,
+    unlockOverlayContentTranslateY,
+    unlockOverlayLetterPulseScale,
+    unlockOverlayLetterScale,
+    unlockOverlayOpacity,
+    unlockOverlayTouchFloatY,
+  ]);
 
   const persistDismissedNoticeIds = useCallback(async () => {
     try {
@@ -727,14 +862,23 @@ export default function RecordDoneScreen() {
   }, [activeTab, flow, isDismissedNoticeIdsReady, unlockNoticeCapsule]);
 
   const closeUnlockNotice = useCallback(async () => {
+    if (isDevUnlockPreviewVisible) {
+      setActiveTab("rec");
+      setIsDevUnlockPreviewVisible(false);
+      return;
+    }
     if (!unlockNoticeCapsule) return;
     dismissedNoticeIdsRef.current.add(unlockNoticeCapsule.id);
     await persistDismissedNoticeIds();
     setActiveTab("rec");
     setUnlockNoticeCapsule(null);
-  }, [persistDismissedNoticeIds, unlockNoticeCapsule]);
+  }, [isDevUnlockPreviewVisible, persistDismissedNoticeIds, unlockNoticeCapsule]);
 
   const openUnlockNoticeCapsule = useCallback(async () => {
+    if (isDevUnlockPreviewVisible) {
+      setIsDevUnlockPreviewVisible(false);
+      return;
+    }
     if (!unlockNoticeCapsule) return;
     const capsuleId = unlockNoticeCapsule.id;
     try {
@@ -748,7 +892,13 @@ export default function RecordDoneScreen() {
       pathname: "/record/kaihuu",
       params: { capsuleId },
     });
-  }, [persistDismissedNoticeIds, refreshUnlockNotice, router, unlockNoticeCapsule]);
+  }, [
+    isDevUnlockPreviewVisible,
+    persistDismissedNoticeIds,
+    refreshUnlockNotice,
+    router,
+    unlockNoticeCapsule,
+  ]);
 
   const panGesture = useMemo(
     () =>
@@ -871,7 +1021,7 @@ export default function RecordDoneScreen() {
             style={styles.screenContent}
           >
             <View style={styles.topArea}>
-              {flow === FLOW.REVIEW ? (
+              {flow === FLOW.REVIEW && activeTab === "rec" ? (
                 <View style={styles.retakeTopRow}>
                   <Pressable
                     onPress={retakeRecording}
@@ -1216,7 +1366,9 @@ export default function RecordDoneScreen() {
             </View>
           </Modal>
           {showUnlockNoticeOverlay ? (
-            <View style={styles.unlockOverlay}>
+            <Animated.View
+              style={[styles.unlockOverlay, { opacity: unlockOverlayOpacity }]}
+            >
               <View pointerEvents="none" style={styles.unlockOverlayBackgroundImage}>
                 <Image
                   source={LETTER_BACKGROUND_IMAGE}
@@ -1224,7 +1376,17 @@ export default function RecordDoneScreen() {
                   resizeMode="stretch"
                 />
               </View>
-              <View style={styles.unlockOverlayTop}>
+              <Animated.View
+                style={[
+                  styles.unlockOverlayTop,
+                  {
+                    transform: [
+                      { translateY: unlockOverlayContentTranslateY },
+                      { scale: unlockOverlayCloseScale },
+                    ],
+                  },
+                ]}
+              >
                 <Pressable
                   onPress={closeUnlockNotice}
                   hitSlop={20}
@@ -1240,8 +1402,13 @@ export default function RecordDoneScreen() {
                     閉じる
                   </Text>
                 </Pressable>
-              </View>
-              <View style={styles.unlockOverlayContent}>
+              </Animated.View>
+              <Animated.View
+                style={[
+                  styles.unlockOverlayContent,
+                  { transform: [{ translateY: unlockOverlayContentTranslateY }] },
+                ]}
+              >
                 <Text
                   style={[
                     styles.unlockOverlayMessage,
@@ -1257,19 +1424,33 @@ export default function RecordDoneScreen() {
                   style={styles.unlockOverlayLetterButton}
                   hitSlop={10}
                 >
-                  <Image
+                  <Animated.Image
                     source={LETTER_IMAGE}
-                    style={styles.unlockOverlayLetterImage}
+                    style={[
+                      styles.unlockOverlayLetterImage,
+                      {
+                        transform: [
+                          { scale: unlockOverlayLetterScale },
+                          { scale: unlockOverlayLetterPulseScale },
+                        ],
+                      },
+                    ]}
                     resizeMode="contain"
                   />
                 </Pressable>
-                <TouchSvg
-                  width={styles.unlockOverlayTouchImage.width}
-                  height={styles.unlockOverlayTouchImage.height}
-                  style={styles.unlockOverlayTouchImage}
-                />
-              </View>
-            </View>
+                <Animated.View
+                  style={{
+                    transform: [{ translateY: unlockOverlayTouchFloatY }],
+                  }}
+                >
+                  <TouchSvg
+                    width={styles.unlockOverlayTouchImage.width}
+                    height={styles.unlockOverlayTouchImage.height}
+                    style={styles.unlockOverlayTouchImage}
+                  />
+                </Animated.View>
+              </Animated.View>
+            </Animated.View>
           ) : null}
           </View>
         </SafeAreaView>

@@ -241,7 +241,9 @@ export default function ArchiveContent({
   const dotDateKeys = useMemo(() => {
     const prefix = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
     return new Set(
-      sortedLatest.filter((r) => r.date.startsWith(prefix)).map((r) => r.date),
+      sortedLatest
+        .filter((r) => r.date.startsWith(prefix) && !r.isLocked)
+        .map((r) => r.date),
     );
   }, [monthIndex, sortedLatest, year]);
   const unlockedDateKeys = useMemo(() => {
@@ -265,12 +267,16 @@ export default function ArchiveContent({
     () => sortedLatest.filter((item) => !item.isLocked).slice(0, 10),
     [sortedLatest],
   );
+  const searchableList = useMemo(
+    () => sortedLatest,
+    [sortedLatest],
+  );
 
   const visibleList = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
     if (!keyword) return visibleBaseList;
-    return visibleBaseList.filter((item) => item.title.toLowerCase().includes(keyword));
-  }, [searchText, visibleBaseList]);
+    return searchableList.filter((item) => item.title.toLowerCase().includes(keyword));
+  }, [searchText, searchableList, visibleBaseList]);
 
   const selectedDateItems = useMemo(() => {
     if (!selectedDateKey) return [];

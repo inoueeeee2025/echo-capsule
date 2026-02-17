@@ -368,15 +368,6 @@ export default function KaihuuScreen() {
   }, []);
 
   useEffect(() => {
-    if (!isTextMode || !selectedCapsuleAudioUri) return;
-    const s = soundRef.current;
-    if (!s) return;
-    try {
-      s.pause();
-    } catch {}
-  }, [isTextMode, selectedCapsuleAudioUri]);
-
-  useEffect(() => {
     setIsAudioActiveAsync(true).catch(() => {});
     return () => {
       unloadSound().catch(() => {});
