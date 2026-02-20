@@ -63,6 +63,7 @@ const LIST_TITLE_NUDGE_X = 2;
 const LIST_TITLE_NUDGE_Y = -3;
 const LIST_TITLE_WEIGHT = "400" as const;
 const GREEN_DOT_IMAGE = require("../assets/images/green.png");
+const MINI_ARROW_IMAGE = require("../assets/images/miniArrow.png");
 
 const DUMMY_RECORDINGS: RecordingItem[] = [
   {
@@ -329,8 +330,11 @@ export default function ArchiveContent({
   useEffect(() => {
     let mounted = true;
     (async () => {
-      await reloadCapsules();
-      if (mounted) setIsInitialLoaded(true);
+      try {
+        await reloadCapsules();
+      } finally {
+        if (mounted) setIsInitialLoaded(true);
+      }
     })();
     return () => {
       mounted = false;
@@ -480,17 +484,29 @@ export default function ArchiveContent({
     setSelectedDateKey(hasRecordingsOnDay ? key : null);
   };
 
-  if (!isInitialLoaded) {
-    return <View style={[styles.container, embedded && styles.embeddedContainer]} />;
-  }
-
   return (
-    <ScrollView
-      style={[styles.container, embedded && styles.embeddedContainer]}
-      contentContainerStyle={styles.pageContent}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-    >
+    <View style={styles.root}>
+      {!isInitialLoaded ? (
+        <View pointerEvents="none" style={[styles.initialSkeleton, embedded && styles.initialSkeletonEmbedded]}>
+          <View style={styles.initialSkeletonSearch} />
+          <View style={styles.initialSkeletonCalendar} />
+          <View style={styles.initialSkeletonSection} />
+          <View style={styles.initialSkeletonRow} />
+          <View style={styles.initialSkeletonRow} />
+          <View style={styles.initialSkeletonRow} />
+        </View>
+      ) : null}
+      <ScrollView
+        style={[
+          styles.container,
+          embedded && styles.embeddedContainer,
+          !isInitialLoaded && styles.loadingContentHidden,
+        ]}
+        contentContainerStyle={styles.pageContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        pointerEvents={isInitialLoaded ? "auto" : "none"}
+      >
       {isKeyboardVisible ? (
         <Pressable
           style={styles.keyboardDismissOverlay}
@@ -562,7 +578,7 @@ export default function ArchiveContent({
                 hitSlop={10}
               >
                 <Image
-                  source={require("../assets/images/miniArrow.png")}
+                  source={MINI_ARROW_IMAGE}
                   style={styles.miniArrowLeft}
                   resizeMode="contain"
                 />
@@ -574,7 +590,7 @@ export default function ArchiveContent({
               >
                 <Text style={styles.dropdownText}>{MONTHS[monthIndex]}</Text>
                 <Image
-                  source={require("../assets/images/miniArrow.png")}
+                  source={MINI_ARROW_IMAGE}
                   style={styles.miniArrowDropdown}
                   resizeMode="contain"
                 />
@@ -586,7 +602,7 @@ export default function ArchiveContent({
               >
                 <Text style={styles.dropdownText}>{String(year)}</Text>
                 <Image
-                  source={require("../assets/images/miniArrow.png")}
+                  source={MINI_ARROW_IMAGE}
                   style={styles.miniArrowDropdown}
                   resizeMode="contain"
                 />
@@ -598,7 +614,7 @@ export default function ArchiveContent({
                 hitSlop={10}
               >
                 <Image
-                  source={require("../assets/images/miniArrow.png")}
+                  source={MINI_ARROW_IMAGE}
                   style={styles.miniArrowRight}
                   resizeMode="contain"
                 />
@@ -959,14 +975,19 @@ export default function ArchiveContent({
           </View>
         </Pressable>
       </Modal>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    position: "relative",
+  },
   container: {
     flex: 1,
-    paddingHorizontal: 18,
+    paddingHorizontal: "4.5%",
     paddingTop: 4,
   },
   pageContent: {
@@ -974,6 +995,43 @@ const styles = StyleSheet.create({
   },
   embeddedContainer: {
     paddingTop: 0,
+  },
+  loadingContentHidden: {
+    opacity: 0,
+  },
+  initialSkeleton: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 20,
+    paddingHorizontal: "4.5%",
+    paddingTop: 28,
+  },
+  initialSkeletonEmbedded: {
+    paddingTop: 4,
+  },
+  initialSkeletonSearch: {
+    height: 54,
+    borderRadius: 14,
+    backgroundColor: "rgba(150, 140, 155, 0.26)",
+  },
+  initialSkeletonCalendar: {
+    marginTop: 22,
+    height: 318,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.34)",
+  },
+  initialSkeletonSection: {
+    marginTop: 18,
+    width: "34%",
+    minWidth: 108,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.5)",
+  },
+  initialSkeletonRow: {
+    marginTop: 10,
+    height: 46,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.4)",
   },
   backWrap: {
     marginTop: 2,
@@ -995,7 +1053,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   segmentTrack: {
-    width: 190,
+    width: "56%",
+    minWidth: 176,
+    maxWidth: 240,
     height: 44,
     borderRadius: 999,
     backgroundColor: "rgba(178, 182, 184, 0.52)",
@@ -1014,7 +1074,7 @@ const styles = StyleSheet.create({
   segmentActivePill: {
     position: "absolute",
     top: 3,
-    width: 93,
+    width: "49%",
     height: 38,
     borderRadius: 999,
     backgroundColor: "rgba(219, 221, 223, 0.84)",
@@ -1172,8 +1232,8 @@ const styles = StyleSheet.create({
   },
   deliveryModalCard: {
     position: "absolute",
-    left: 22,
-    right: 22,
+    left: "6%",
+    right: "6%",
     top: 165,
     zIndex: 3,
     elevation: 3,
@@ -1181,7 +1241,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "rgba(140, 143, 146, 0.5)",
     backgroundColor: "rgba(247, 247, 248, 0.95)",
-    paddingHorizontal: 22,
+    paddingHorizontal: "6%",
     paddingVertical: 14,
   },
   deliveryModalDate: {
@@ -1223,7 +1283,8 @@ const styles = StyleSheet.create({
     fontWeight: LIST_TITLE_WEIGHT,
   },
   deliveryModalDuration: {
-    width: 62,
+    width: "18%",
+    minWidth: 58,
     color: "#8e9092",
     fontSize: 14,
     textAlign: "right",
@@ -1288,7 +1349,8 @@ const styles = StyleSheet.create({
     height: 9,
   },
   duration: {
-    width: 44,
+    width: "12%",
+    minWidth: 42,
     color: "#8e9092",
     fontSize: 15,
   },
@@ -1301,7 +1363,8 @@ const styles = StyleSheet.create({
     marginTop: LIST_TITLE_NUDGE_Y,
   },
   date: {
-    width: 80,
+    width: "22%",
+    minWidth: 78,
     color: "#8e9092",
     fontSize: 15,
     textAlign: "right",
@@ -1352,10 +1415,12 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   confirmModalCard: {
-    width: 330,
-    minHeight: 200,
+    width: "90%",
+    height:"22%",
+    maxWidth: 360,
+    
     borderRadius: 32,
-    backgroundColor: "rgb(156, 157, 163)",
+    backgroundColor: "rgba(79, 80, 86, 0.73)",
     overflow: "hidden",
     paddingTop: 28,
   },
@@ -1402,7 +1467,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   confirmModalDeleteText: {
-    color: "rgb(234, 0, 0)",
+    color: "rgb(255, 23, 23)",
     fontSize: 17,
     fontWeight: "700",
     letterSpacing: 2,
@@ -1414,7 +1479,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalCard: {
-    width: 180,
+    width: "52%",
+    maxWidth: 220,
     maxHeight: 260,
     backgroundColor: "#f6f7f8",
     borderRadius: 14,
