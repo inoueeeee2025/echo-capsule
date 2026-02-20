@@ -487,7 +487,13 @@ export default function ArchiveContent({
   return (
     <View style={styles.root}>
       {!isInitialLoaded ? (
-        <View pointerEvents="none" style={[styles.initialSkeleton, embedded && styles.initialSkeletonEmbedded]}>
+        <View
+          pointerEvents="none"
+          style={[
+            styles.initialSkeleton,
+            embedded && styles.initialSkeletonEmbedded,
+          ]}
+        >
           <View style={styles.initialSkeletonSearch} />
           <View style={styles.initialSkeletonCalendar} />
           <View style={styles.initialSkeletonSection} />
@@ -507,474 +513,475 @@ export default function ArchiveContent({
         showsVerticalScrollIndicator={false}
         pointerEvents={isInitialLoaded ? "auto" : "none"}
       >
-      {isKeyboardVisible ? (
-        <Pressable
-          style={styles.keyboardDismissOverlay}
-          onPress={Keyboard.dismiss}
-        />
-      ) : null}
-      {!embedded ? (
-        <>
-          <View style={styles.backWrap}>
-            <Pressable
-              onPress={() => {
-                if (onPressRec) {
-                  onPressRec();
-                  return;
-                }
-                router.back();
-              }}
-              hitSlop={8}
-            >
-              <Text style={styles.backLabel}>back</Text>
-              <Text style={styles.backArrow}>{"<"}</Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.segmentWrap}>
-            <View style={styles.segmentTrack}>
+        {isKeyboardVisible ? (
+          <Pressable
+            style={styles.keyboardDismissOverlay}
+            onPress={Keyboard.dismiss}
+          />
+        ) : null}
+        {!embedded ? (
+          <>
+            <View style={styles.backWrap}>
               <Pressable
-                style={styles.segmentHalf}
                 onPress={() => {
                   if (onPressRec) {
                     onPressRec();
-                  } else {
-                    router.replace("/record/rec");
+                    return;
                   }
+                  router.back();
                 }}
+                hitSlop={8}
               >
-                <Text style={styles.segmentText}>rec</Text>
+                <Text style={styles.backLabel}>back</Text>
+                <Text style={styles.backArrow}>{"<"}</Text>
               </Pressable>
-              <View
-                style={[styles.segmentActivePill, styles.segmentActiveRight]}
-              />
-              <View style={styles.segmentHalf} pointerEvents="none">
-                <Text style={[styles.segmentText, styles.segmentTextActive]}>
-                  archive
-                </Text>
+            </View>
+
+            <View style={styles.segmentWrap}>
+              <View style={styles.segmentTrack}>
+                <Pressable
+                  style={styles.segmentHalf}
+                  onPress={() => {
+                    if (onPressRec) {
+                      onPressRec();
+                    } else {
+                      router.replace("/record/rec");
+                    }
+                  }}
+                >
+                  <Text style={styles.segmentText}>rec</Text>
+                </Pressable>
+                <View
+                  style={[styles.segmentActivePill, styles.segmentActiveRight]}
+                />
+                <View style={styles.segmentHalf} pointerEvents="none">
+                  <Text style={[styles.segmentText, styles.segmentTextActive]}>
+                    archive
+                  </Text>
+                </View>
               </View>
             </View>
-          </View>
-        </>
-      ) : null}
+          </>
+        ) : null}
 
-      <View style={styles.searchWrap}>
-        <TextInput
-          value={searchText}
-          onChangeText={setSearchText}
-          placeholder="Search"
-          placeholderTextColor="rgba(255,255,255,0.75)"
-          style={styles.searchInput}
-        />
-      </View>
+        <View style={styles.searchWrap}>
+          <TextInput
+            value={searchText}
+            onChangeText={setSearchText}
+            placeholder="Search"
+            placeholderTextColor="rgba(255,255,255,0.75)"
+            style={styles.searchInput}
+          />
+        </View>
 
-      {!isSearching ? (
-        <View style={[styles.calendarStack]}>
-          <View style={styles.calendarCard}>
-            <View style={styles.calendarHeader}>
-              <Pressable
-                style={styles.navArrowWrap}
-                onPress={() => moveMonth(-1)}
-                hitSlop={10}
-              >
-                <Image
-                  source={MINI_ARROW_IMAGE}
-                  style={styles.miniArrowLeft}
-                  resizeMode="contain"
-                />
-              </Pressable>
+        {!isSearching ? (
+          <View style={[styles.calendarStack]}>
+            <View style={styles.calendarCard}>
+              <View style={styles.calendarHeader}>
+                <Pressable
+                  style={styles.navArrowWrap}
+                  onPress={() => moveMonth(-1)}
+                  hitSlop={10}
+                >
+                  <Image
+                    source={MINI_ARROW_IMAGE}
+                    style={styles.miniArrowLeft}
+                    resizeMode="contain"
+                  />
+                </Pressable>
 
-              <Pressable
-                style={styles.dropdownPill}
-                onPress={() => setMonthPickerOpen(true)}
-              >
-                <Text style={styles.dropdownText}>{MONTHS[monthIndex]}</Text>
-                <Image
-                  source={MINI_ARROW_IMAGE}
-                  style={styles.miniArrowDropdown}
-                  resizeMode="contain"
-                />
-              </Pressable>
+                <Pressable
+                  style={styles.dropdownPill}
+                  onPress={() => setMonthPickerOpen(true)}
+                >
+                  <Text style={styles.dropdownText}>{MONTHS[monthIndex]}</Text>
+                  <Image
+                    source={MINI_ARROW_IMAGE}
+                    style={styles.miniArrowDropdown}
+                    resizeMode="contain"
+                  />
+                </Pressable>
 
-              <Pressable
-                style={styles.dropdownPill}
-                onPress={() => setYearPickerOpen(true)}
-              >
-                <Text style={styles.dropdownText}>{String(year)}</Text>
-                <Image
-                  source={MINI_ARROW_IMAGE}
-                  style={styles.miniArrowDropdown}
-                  resizeMode="contain"
-                />
-              </Pressable>
+                <Pressable
+                  style={styles.dropdownPill}
+                  onPress={() => setYearPickerOpen(true)}
+                >
+                  <Text style={styles.dropdownText}>{String(year)}</Text>
+                  <Image
+                    source={MINI_ARROW_IMAGE}
+                    style={styles.miniArrowDropdown}
+                    resizeMode="contain"
+                  />
+                </Pressable>
 
-              <Pressable
-                style={styles.navArrowWrap}
-                onPress={() => moveMonth(1)}
-                hitSlop={10}
-              >
-                <Image
-                  source={MINI_ARROW_IMAGE}
-                  style={styles.miniArrowRight}
-                  resizeMode="contain"
-                />
-              </Pressable>
+                <Pressable
+                  style={styles.navArrowWrap}
+                  onPress={() => moveMonth(1)}
+                  hitSlop={10}
+                >
+                  <Image
+                    source={MINI_ARROW_IMAGE}
+                    style={styles.miniArrowRight}
+                    resizeMode="contain"
+                  />
+                </Pressable>
+              </View>
+
+              <View style={styles.weekRow}>
+                {WEEKDAYS.map((w) => (
+                  <Text key={w} style={styles.weekText}>
+                    {w}
+                  </Text>
+                ))}
+              </View>
+
+              <View style={styles.grid}>
+                {cells.map((date) => {
+                  const key = toDateKey(date);
+                  const inCurrentMonth =
+                    date.getMonth() === monthIndex &&
+                    date.getFullYear() === year;
+                  const hasDot = dotDateKeys.has(key);
+                  const hasUnopenedDot = unopenedDotDateKeys.has(key);
+                  const isSelected = selectedDateKey === key;
+                  return (
+                    <Pressable
+                      key={key}
+                      style={styles.dayCell}
+                      onPress={() => onSelectDay(date)}
+                    >
+                      <View
+                        style={[
+                          styles.dayNumberWrap,
+                          isSelected && styles.daySelected,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.dayNumber,
+                            !inCurrentMonth && styles.dayNumberMuted,
+                          ]}
+                        >
+                          {date.getDate()}
+                        </Text>
+                      </View>
+                      <View style={styles.dotArea}>
+                        {hasUnopenedDot ? (
+                          <Image
+                            source={GREEN_DOT_IMAGE}
+                            style={styles.unopenedDotImage}
+                            resizeMode="contain"
+                          />
+                        ) : hasDot ? (
+                          <View style={styles.dot} />
+                        ) : null}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
 
-            <View style={styles.weekRow}>
-              {WEEKDAYS.map((w) => (
-                <Text key={w} style={styles.weekText}>
-                  {w}
-                </Text>
-              ))}
-            </View>
-
-            <View style={styles.grid}>
-              {cells.map((date) => {
-                const key = toDateKey(date);
-                const inCurrentMonth =
-                  date.getMonth() === monthIndex && date.getFullYear() === year;
-                const hasDot = dotDateKeys.has(key);
-                const hasUnopenedDot = unopenedDotDateKeys.has(key);
-                const isSelected = selectedDateKey === key;
-                return (
-                  <Pressable
-                    key={key}
-                    style={styles.dayCell}
-                    onPress={() => onSelectDay(date)}
-                  >
-                    <View
-                      style={[
-                        styles.dayNumberWrap,
-                        isSelected && styles.daySelected,
-                      ]}
+            {selectedDateKey && selectedDateItems.length > 0 ? (
+              <>
+                <Pressable
+                  style={styles.deliveryModalBackdrop}
+                  onPress={() => setSelectedDateKey(null)}
+                />
+                <View style={styles.deliveryModalCard}>
+                  <View style={styles.deliveryModalDateRow}>
+                    <Text style={styles.deliveryModalDate}>
+                      {formatDateJPWithWeekday(selectedDateKey)}
+                    </Text>
+                    <Pressable
+                      onPress={() => {
+                        const target = selectedDateItems[0];
+                        if (!target || target.source !== "capsule") return;
+                        setConfirmDeleteItem(target);
+                      }}
+                      hitSlop={8}
+                      style={styles.deliveryModalTrashButton}
+                    >
+                      <TrashSvg
+                        width={16}
+                        height={16}
+                        style={[
+                          styles.deliveryModalTrashIcon,
+                          selectedDateItems[0]?.source !== "capsule" &&
+                            styles.deliveryModalTrashIconDisabled,
+                        ]}
+                      />
+                    </Pressable>
+                  </View>
+                  <View style={styles.deliveryModalRow}>
+                    <Text
+                      style={styles.deliveryModalTitle}
+                      numberOfLines={1}
+                      onLongPress={() =>
+                        showFullTitle(selectedDateItems[0].title)
+                      }
+                    >
+                      {selectedDateItems[0].title}
+                    </Text>
+                    <Text style={styles.deliveryModalDuration}>
+                      {formatDuration(selectedDateItems[0].durationSec)}
+                    </Text>
+                    <Pressable
+                      style={styles.playButton}
+                      onPress={() => openCassetteScreen(selectedDateItems[0])}
+                      hitSlop={6}
+                    >
+                      {isSvgReady ? (
+                        <PlayCircleSvg width={18} height={18} />
+                      ) : (
+                        <Text style={styles.playIcon}>{">"}</Text>
+                      )}
+                    </Pressable>
+                    <Pressable
+                      onPress={() => openTranscript(selectedDateItems[0])}
+                      hitSlop={6}
                     >
                       <Text
                         style={[
-                          styles.dayNumber,
-                          !inCurrentMonth && styles.dayNumberMuted,
+                          styles.transcript,
+                          (!selectedDateItems[0].hasTranscript ||
+                            selectedDateItems[0].isLocked) &&
+                            styles.transcriptDisabled,
                         ]}
                       >
-                        {date.getDate()}
+                        T
                       </Text>
-                    </View>
-                    <View style={styles.dotArea}>
-                      {hasUnopenedDot ? (
-                        <Image
-                          source={GREEN_DOT_IMAGE}
-                          style={styles.unopenedDotImage}
-                          resizeMode="contain"
-                        />
-                      ) : hasDot ? (
-                        <View style={styles.dot} />
-                      ) : null}
-                    </View>
-                  </Pressable>
-                );
-              })}
+                    </Pressable>
+                  </View>
+                </View>
+              </>
+            ) : null}
+          </View>
+        ) : null}
+
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>{sectionTitle}</Text>
+        </View>
+
+        <View style={styles.listWrap}>
+          {visibleList.map((item) => {
+            const rowContent = (
+              <View style={styles.row}>
+                {item.isUnopened && !item.isLocked ? (
+                  <Image
+                    source={GREEN_DOT_IMAGE}
+                    style={styles.rowMarkerImage}
+                    resizeMode="contain"
+                  />
+                ) : null}
+                <Text style={styles.duration}>
+                  {formatDuration(item.durationSec)}
+                </Text>
+                <Text
+                  style={styles.title}
+                  numberOfLines={1}
+                  onLongPress={() => showFullTitle(item.title)}
+                >
+                  {item.title}
+                </Text>
+                <Text style={styles.date}>{formatDateJP(item.date)}</Text>
+
+                <Pressable
+                  style={styles.playButton}
+                  onPress={() => openCassetteScreen(item)}
+                  hitSlop={6}
+                >
+                  {isSvgReady ? (
+                    <PlayCircleSvg width={18} height={18} />
+                  ) : (
+                    <Text style={styles.playIcon}>{">"}</Text>
+                  )}
+                </Pressable>
+
+                <Pressable onPress={() => openTranscript(item)} hitSlop={6}>
+                  <Text
+                    style={[
+                      styles.transcript,
+                      (!item.hasTranscript || item.isLocked) &&
+                        styles.transcriptDisabled,
+                    ]}
+                  >
+                    T
+                  </Text>
+                </Pressable>
+              </View>
+            );
+
+            const canSwipeDelete = !isSearching && item.source === "capsule";
+            if (!canSwipeDelete) {
+              return <View key={item.id}>{rowContent}</View>;
+            }
+
+            return (
+              <Swipeable
+                key={item.id}
+                ref={(ref) => {
+                  swipeableRefs.current[item.id] = ref;
+                }}
+                onSwipeableWillOpen={() => handleSwipeWillOpen(item.id)}
+                onSwipeableWillClose={() => {
+                  if (openSwipeIdRef.current === item.id)
+                    openSwipeIdRef.current = null;
+                }}
+                overshootRight={false}
+                renderRightActions={(progress) => {
+                  const translateX = progress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [82, 0],
+                    extrapolate: "clamp",
+                  });
+                  const opacity = progress.interpolate({
+                    inputRange: [0, 0.25, 1],
+                    outputRange: [0, 0.35, 1],
+                    extrapolate: "clamp",
+                  });
+                  return (
+                    <Animated.View
+                      style={{
+                        transform: [{ translateX }],
+                        opacity,
+                      }}
+                    >
+                      <Pressable
+                        onPress={() => requestDeleteFromSwipe(item)}
+                        style={styles.swipeDeleteAction}
+                      >
+                        <Text style={styles.swipeDeleteText}>削除</Text>
+                      </Pressable>
+                    </Animated.View>
+                  );
+                }}
+              >
+                {rowContent}
+              </Swipeable>
+            );
+          })}
+          {visibleList.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <Text style={styles.emptyText}>No recordings found.</Text>
+            </View>
+          ) : null}
+        </View>
+
+        <Modal
+          visible={!!confirmDeleteItem}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            if (!isDeleting) setConfirmDeleteItem(null);
+          }}
+        >
+          <View style={styles.confirmModalRoot}>
+            <Pressable
+              style={styles.confirmModalBackdropPressArea}
+              onPress={() => {
+                if (!isDeleting) setConfirmDeleteItem(null);
+              }}
+            />
+            <View style={styles.confirmModalCard}>
+              <Text style={styles.confirmModalTitle}>本当に削除しますか？</Text>{" "}
+              <Text style={styles.confirmModalText}>
+                {confirmDeleteItem?.title ?? ""}
+              </Text>
+              <View style={styles.confirmModalActions}>
+                <Pressable
+                  style={styles.confirmModalButton}
+                  onPress={() => setConfirmDeleteItem(null)}
+                  disabled={isDeleting}
+                >
+                  <Text style={styles.confirmModalCancelText}>
+                    キャンセル
+                  </Text>{" "}
+                </Pressable>
+                <View style={styles.confirmModalDivider} />
+                <Pressable
+                  style={styles.confirmModalButton}
+                  onPress={() => {
+                    void confirmDeleteCapsule();
+                  }}
+                  disabled={isDeleting}
+                >
+                  <Text style={styles.confirmModalDeleteText}>削除</Text>{" "}
+                </Pressable>
+              </View>
             </View>
           </View>
+        </Modal>
 
-          {selectedDateKey && selectedDateItems.length > 0 ? (
-            <>
-              <Pressable
-                style={styles.deliveryModalBackdrop}
-                onPress={() => setSelectedDateKey(null)}
-              />
-              <View style={styles.deliveryModalCard}>
-                <View style={styles.deliveryModalDateRow}>
-                  <Text style={styles.deliveryModalDate}>
-                    {formatDateJPWithWeekday(selectedDateKey)}
-                  </Text>
+        <Modal
+          visible={monthPickerOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setMonthPickerOpen(false)}
+        >
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => setMonthPickerOpen(false)}
+          >
+            <View style={styles.modalCard}>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {MONTHS.map((m, idx) => (
                   <Pressable
+                    key={m}
+                    style={styles.modalRow}
                     onPress={() => {
-                      const target = selectedDateItems[0];
-                      if (!target || target.source !== "capsule") return;
-                      setConfirmDeleteItem(target);
+                      setCurrentMonth(new Date(year, idx, 1));
+                      setMonthPickerOpen(false);
                     }}
-                    hitSlop={8}
-                    style={styles.deliveryModalTrashButton}
-                  >
-                    <TrashSvg
-                      width={16}
-                      height={16}
-                      style={[
-                        styles.deliveryModalTrashIcon,
-                        selectedDateItems[0]?.source !== "capsule" &&
-                          styles.deliveryModalTrashIconDisabled,
-                      ]}
-                    />
-                  </Pressable>
-                </View>
-                <View style={styles.deliveryModalRow}>
-                  <Text
-                    style={styles.deliveryModalTitle}
-                    numberOfLines={1}
-                    onLongPress={() =>
-                      showFullTitle(selectedDateItems[0].title)
-                    }
-                  >
-                    {selectedDateItems[0].title}
-                  </Text>
-                  <Text style={styles.deliveryModalDuration}>
-                    {formatDuration(selectedDateItems[0].durationSec)}
-                  </Text>
-                  <Pressable
-                    style={styles.playButton}
-                    onPress={() => openCassetteScreen(selectedDateItems[0])}
-                    hitSlop={6}
-                  >
-                    {isSvgReady ? (
-                      <PlayCircleSvg width={18} height={18} />
-                    ) : (
-                      <Text style={styles.playIcon}>{">"}</Text>
-                    )}
-                  </Pressable>
-                  <Pressable
-                    onPress={() => openTranscript(selectedDateItems[0])}
-                    hitSlop={6}
                   >
                     <Text
                       style={[
-                        styles.transcript,
-                        (!selectedDateItems[0].hasTranscript ||
-                          selectedDateItems[0].isLocked) &&
-                          styles.transcriptDisabled,
+                        styles.modalRowText,
+                        idx === monthIndex && styles.modalRowTextActive,
                       ]}
                     >
-                      T
+                      {m}
                     </Text>
                   </Pressable>
-                </View>
-              </View>
-            </>
-          ) : null}
-        </View>
-      ) : null}
-
-      <View style={styles.sectionHead}>
-        <Text style={styles.sectionTitle}>{sectionTitle}</Text>
-      </View>
-
-      <View style={styles.listWrap}>
-        {visibleList.map((item) => {
-          const rowContent = (
-            <View style={styles.row}>
-              {item.isUnopened && !item.isLocked ? (
-                <Image
-                  source={GREEN_DOT_IMAGE}
-                  style={styles.rowMarkerImage}
-                  resizeMode="contain"
-                />
-              ) : null}
-              <Text style={styles.duration}>
-                {formatDuration(item.durationSec)}
-              </Text>
-              <Text
-                style={styles.title}
-                numberOfLines={1}
-                onLongPress={() => showFullTitle(item.title)}
-              >
-                {item.title}
-              </Text>
-              <Text style={styles.date}>{formatDateJP(item.date)}</Text>
-
-              <Pressable
-                style={styles.playButton}
-                onPress={() => openCassetteScreen(item)}
-                hitSlop={6}
-              >
-                {isSvgReady ? (
-                  <PlayCircleSvg width={18} height={18} />
-                ) : (
-                  <Text style={styles.playIcon}>{">"}</Text>
-                )}
-              </Pressable>
-
-              <Pressable onPress={() => openTranscript(item)} hitSlop={6}>
-                <Text
-                  style={[
-                    styles.transcript,
-                    (!item.hasTranscript || item.isLocked) &&
-                      styles.transcriptDisabled,
-                  ]}
-                >
-                  T
-                </Text>
-              </Pressable>
+                ))}
+              </ScrollView>
             </View>
-          );
+          </Pressable>
+        </Modal>
 
-          const canSwipeDelete = !isSearching && item.source === "capsule";
-          if (!canSwipeDelete) {
-            return <View key={item.id}>{rowContent}</View>;
-          }
-
-          return (
-            <Swipeable
-              key={item.id}
-              ref={(ref) => {
-                swipeableRefs.current[item.id] = ref;
-              }}
-              onSwipeableWillOpen={() => handleSwipeWillOpen(item.id)}
-              onSwipeableWillClose={() => {
-                if (openSwipeIdRef.current === item.id)
-                  openSwipeIdRef.current = null;
-              }}
-              overshootRight={false}
-              renderRightActions={(progress) => {
-                const translateX = progress.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [82, 0],
-                  extrapolate: "clamp",
-                });
-                const opacity = progress.interpolate({
-                  inputRange: [0, 0.25, 1],
-                  outputRange: [0, 0.35, 1],
-                  extrapolate: "clamp",
-                });
-                return (
-                  <Animated.View
-                    style={{
-                      transform: [{ translateX }],
-                      opacity,
-                    }}
-                  >
-                    <Pressable
-                      onPress={() => requestDeleteFromSwipe(item)}
-                      style={styles.swipeDeleteAction}
-                    >
-                      <Text style={styles.swipeDeleteText}>削除</Text>
-                    </Pressable>
-                  </Animated.View>
-                );
-              }}
-            >
-              {rowContent}
-            </Swipeable>
-          );
-        })}
-        {visibleList.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <Text style={styles.emptyText}>No recordings found.</Text>
-          </View>
-        ) : null}
-      </View>
-
-      <Modal
-        visible={!!confirmDeleteItem}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          if (!isDeleting) setConfirmDeleteItem(null);
-        }}
-      >
-        <View style={styles.confirmModalRoot}>
-          <Pressable
-            style={styles.confirmModalBackdropPressArea}
-            onPress={() => {
-              if (!isDeleting) setConfirmDeleteItem(null);
-            }}
-          />
-          <View style={styles.confirmModalCard}>
-            <Text style={styles.confirmModalTitle}>本当に削除しますか？</Text>
-            <Text style={styles.confirmModalText}>
-              {confirmDeleteItem?.title ?? ""}
-            </Text>
-            <View style={styles.confirmModalActions}>
-              <Pressable
-                style={styles.confirmModalButton}
-                onPress={() => setConfirmDeleteItem(null)}
-                disabled={isDeleting}
-              >
-                <Text style={styles.confirmModalCancelText}>キャンセル</Text>
-              </Pressable>
-              <View style={styles.confirmModalDivider} />
-              <Pressable
-                style={styles.confirmModalButton}
-                onPress={() => {
-                  void confirmDeleteCapsule();
-                }}
-                disabled={isDeleting}
-              >
-                <Text style={styles.confirmModalDeleteText}>
-                  削除
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={monthPickerOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setMonthPickerOpen(false)}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setMonthPickerOpen(false)}
+        <Modal
+          visible={yearPickerOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setYearPickerOpen(false)}
         >
-          <View style={styles.modalCard}>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {MONTHS.map((m, idx) => (
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={() => setYearPickerOpen(false)}
+          >
+            <View style={styles.modalCard}>
+              {[2023, 2024, 2025, 2026, 2027, 2028].map((y) => (
                 <Pressable
-                  key={m}
+                  key={String(y)}
                   style={styles.modalRow}
                   onPress={() => {
-                    setCurrentMonth(new Date(year, idx, 1));
-                    setMonthPickerOpen(false);
+                    setCurrentMonth(new Date(y, monthIndex, 1));
+                    setYearPickerOpen(false);
                   }}
                 >
                   <Text
                     style={[
                       styles.modalRowText,
-                      idx === monthIndex && styles.modalRowTextActive,
+                      y === year && styles.modalRowTextActive,
                     ]}
                   >
-                    {m}
+                    {y}
                   </Text>
                 </Pressable>
               ))}
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Modal>
-
-      <Modal
-        visible={yearPickerOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setYearPickerOpen(false)}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setYearPickerOpen(false)}
-        >
-          <View style={styles.modalCard}>
-            {[2023, 2024, 2025, 2026, 2027, 2028].map((y) => (
-              <Pressable
-                key={String(y)}
-                style={styles.modalRow}
-                onPress={() => {
-                  setCurrentMonth(new Date(y, monthIndex, 1));
-                  setYearPickerOpen(false);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.modalRowText,
-                    y === year && styles.modalRowTextActive,
-                  ]}
-                >
-                  {y}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </Pressable>
-      </Modal>
+            </View>
+          </Pressable>
+        </Modal>
       </ScrollView>
     </View>
   );
@@ -1311,8 +1318,8 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     color: "#181a1c",
-    fontWeight:500,
-    marginLeft:4,
+    fontWeight: 500,
+    marginLeft: 4,
   },
   listWrap: {
     width: "100%",
@@ -1333,7 +1340,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(237, 7, 7, 0.88)",
-    marginLeft:6,
+    marginLeft: 6,
   },
   swipeDeleteText: {
     color: "#fff",
@@ -1416,9 +1423,9 @@ const styles = StyleSheet.create({
   },
   confirmModalCard: {
     width: "90%",
-    height:"22%",
+    height: "22%",
     maxWidth: 360,
-    
+
     borderRadius: 32,
     backgroundColor: "rgba(79, 80, 86, 0.73)",
     overflow: "hidden",
@@ -1430,7 +1437,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     letterSpacing: 0.8,
-    marginTop:10,
+    marginTop: 10,
   },
   confirmModalText: {
     marginTop: 18,
@@ -1504,4 +1511,3 @@ const styles = StyleSheet.create({
     zIndex: 30,
   },
 });
-

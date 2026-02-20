@@ -1,9 +1,9 @@
-﻿import ArchiveContent from "@/components/ArchiveContent";
+import ArchiveContent from "@/components/ArchiveContent";
 import RecordToolbar from "@/components/RecordToolbar";
 import { loadCapsules } from "@/src/capsules/storage";
-import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Slider from "@react-native-community/slider";
+import { useFocusEffect } from "@react-navigation/native";
 import { Asset } from "expo-asset";
 import {
   createAudioPlayer,
@@ -15,7 +15,6 @@ import { useFonts } from "expo-font";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
   Animated,
   Image,
@@ -27,6 +26,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -349,7 +349,6 @@ export default function KaihuuScreen() {
   const recGuideText = isLockedToday
     ? "本日の録音は完了しました。\n1年後のあなたは、どんな場所にいるかな？"
     : "録音ボタンを押して録音しましょう";
-
   const transcriptLine1 = "こんにちはー";
   const transcriptLine2 = "おはようございますー";
   const ydwStyle = ydwLoaded ? styles.ydwBananaslipPlus : undefined;
@@ -513,6 +512,10 @@ export default function KaihuuScreen() {
                     <Text style={styles.backToCassetteText}>
                       カセットモードへ
                     </Text>
+                    <Text style={styles.audioModeLinkText}>音声モードへ</Text>
+                    <Text style={styles.textModeLinkText}>
+                      テキストモードへ
+                    </Text>
                     <View style={styles.backToCassetteUnderline} />
                   </View>
                 </Pressable>
@@ -606,7 +609,9 @@ export default function KaihuuScreen() {
                             >
                               <ScrollView
                                 style={styles.paperScroll}
-                                contentContainerStyle={styles.paperScrollContent}
+                                contentContainerStyle={
+                                  styles.paperScrollContent
+                                }
                                 showsVerticalScrollIndicator={false}
                               >
                                 <Text
@@ -622,7 +627,9 @@ export default function KaihuuScreen() {
                                 <View
                                   style={[
                                     styles.line,
-                                    { width: Math.max(1, (line1Width || 1) - 2) },
+                                    {
+                                      width: Math.max(1, (line1Width || 1) - 2),
+                                    },
                                   ]}
                                 />
                                 <Text
@@ -642,7 +649,9 @@ export default function KaihuuScreen() {
                                 <View
                                   style={[
                                     styles.lineWide,
-                                    { width: Math.max(1, (line2Width || 1) - 2) },
+                                    {
+                                      width: Math.max(1, (line2Width || 1) - 2),
+                                    },
                                   ]}
                                 />
                               </ScrollView>
@@ -653,7 +662,7 @@ export default function KaihuuScreen() {
                             onPress={() => setArchivePhase("audio")}
                           >
                             <Text style={styles.audioModeLinkText}>
-                              音声モードへ
+                              髻ｳ螢ｰ繝｢繝ｼ繝峨∈
                             </Text>
                           </Pressable>
                         </>
@@ -747,7 +756,7 @@ export default function KaihuuScreen() {
                               onPress={() => setArchivePhase("text")}
                             >
                               <Text style={styles.textModeLinkText}>
-                                テキストモードへ
+                                繝・く繧ｹ繝医Δ繝ｼ繝峨∈
                               </Text>
                             </Pressable>
                           </View>
