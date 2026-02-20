@@ -1,33 +1,33 @@
-﻿import RecordToolbar from "@/components/RecordToolbar";
-import { ZenAntiqueSoft_400Regular } from "@expo-google-fonts/zen-antique-soft";
-import ArchiveContent from "@/components/ArchiveContent";
-import TouchSvg from "@/assets/images/touch.svg";
 import PushAppBaseSvg from "@/assets/images/pushAppBase.svg";
+import TouchSvg from "@/assets/images/touch.svg";
+import ArchiveContent from "@/components/ArchiveContent";
+import RecordToolbar from "@/components/RecordToolbar";
 import {
   addCapsule,
   CapsuleRecord,
   loadCapsules,
   updateCapsule,
 } from "@/src/capsules/storage";
-import { useFocusEffect } from "@react-navigation/native";
+import { ZenAntiqueSoft_400Regular } from "@expo-google-fonts/zen-antique-soft";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Slider from "@react-native-community/slider";
+import { useFocusEffect } from "@react-navigation/native";
+import { BlurView } from "expo-blur";
 import {
   createAudioPlayer,
+  RecordingPresets,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
   setIsAudioActiveAsync,
-  RecordingPresets,
+  useAudioRecorder,
   type AudioPlayer,
   type AudioRecorder,
   type AudioStatus,
-  useAudioRecorder,
 } from "expo-audio";
 import { useFonts } from "expo-font";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
   Animated,
   Dimensions,
@@ -44,6 +44,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const STATUS = {
@@ -140,11 +141,14 @@ export default function RecordDoneScreen() {
   const [savedProjectName, setSavedProjectName] = useState("");
   const [isSaveComplete, setIsSaveComplete] = useState(false);
   const [activeTab, setActiveTab] = useState<"rec" | "archive">("rec");
-  const [unlockNoticeCapsule, setUnlockNoticeCapsule] = useState<CapsuleRecord | null>(null);
-  const [isDevUnlockPreviewVisible, setIsDevUnlockPreviewVisible] = useState(false);
+  const [unlockNoticeCapsule, setUnlockNoticeCapsule] =
+    useState<CapsuleRecord | null>(null);
+  const [isDevUnlockPreviewVisible, setIsDevUnlockPreviewVisible] =
+    useState(false);
   const [hasUnopenedInArchive, setHasUnopenedInArchive] = useState(false);
   const [slideWidth, setSlideWidth] = useState(SCREEN_WIDTH);
-  const [isDismissedNoticeIdsReady, setIsDismissedNoticeIdsReady] = useState(false);
+  const [isDismissedNoticeIdsReady, setIsDismissedNoticeIdsReady] =
+    useState(false);
 
   const pulse = useRef(new Animated.Value(1)).current;
   const saveReveal = useRef(new Animated.Value(0)).current;
@@ -154,11 +158,15 @@ export default function RecordDoneScreen() {
   const unlockOverlayLetterPulseScale = useRef(new Animated.Value(1)).current;
   const unlockOverlayCloseScale = useRef(new Animated.Value(0.8)).current;
   const unlockOverlayTouchFloatY = useRef(new Animated.Value(0)).current;
-  const unlockOverlayLetterPulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
-  const unlockOverlayTouchFloatLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const unlockOverlayLetterPulseLoopRef =
+    useRef<Animated.CompositeAnimation | null>(null);
+  const unlockOverlayTouchFloatLoopRef =
+    useRef<Animated.CompositeAnimation | null>(null);
   const pushNoticeTranslateX = useRef(new Animated.Value(72)).current;
   const pushNoticeOpacity = useRef(new Animated.Value(0)).current;
-  const pushNoticeHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pushNoticeHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const slideX = useRef(new Animated.Value(0)).current;
   const dismissedNoticeIdsRef = useRef<Set<string>>(new Set());
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -272,10 +280,7 @@ export default function RecordDoneScreen() {
   }, []);
 
   const startRecording = async () => {
-    if (
-      recordStatusRef.current === STATUS.RECORDING ||
-      flow !== FLOW.RECORD
-    ) {
+    if (recordStatusRef.current === STATUS.RECORDING || flow !== FLOW.RECORD) {
       setIsRecordPressing(false);
       return;
     }
@@ -552,7 +557,10 @@ export default function RecordDoneScreen() {
           { uri: lastRecordedUri },
           { updateInterval: 200 },
         );
-        const sub = player.addListener("playbackStatusUpdate", onPlaybackStatusUpdate);
+        const sub = player.addListener(
+          "playbackStatusUpdate",
+          onPlaybackStatusUpdate,
+        );
 
         if (!mounted) {
           sub.remove();
@@ -682,9 +690,12 @@ export default function RecordDoneScreen() {
     !isProjectModalVisible &&
     !isSaveComplete;
   const showUnlockNoticeOverlay =
-    isRecIdleNoticeSurface && (!!unlockNoticeCapsule || isDevUnlockPreviewVisible);
+    isRecIdleNoticeSurface &&
+    (!!unlockNoticeCapsule || isDevUnlockPreviewVisible);
   const showPushNotice =
-    !isRecIdleNoticeSurface && !!unlockNoticeCapsule && !isDevUnlockPreviewVisible;
+    !isRecIdleNoticeSurface &&
+    !!unlockNoticeCapsule &&
+    !isDevUnlockPreviewVisible;
   const unlockNoticeMessageDate = useMemo(() => {
     const sourceMs = unlockNoticeCapsule?.unlockAtMs ?? Date.now();
     const d = new Date(sourceMs);
@@ -887,12 +898,15 @@ export default function RecordDoneScreen() {
     let mounted = true;
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(DISMISSED_NOTICE_IDS_STORAGE_KEY);
+        const raw = await AsyncStorage.getItem(
+          DISMISSED_NOTICE_IDS_STORAGE_KEY,
+        );
         if (mounted && raw) {
           const parsed: unknown = JSON.parse(raw);
           if (Array.isArray(parsed)) {
             const ids = parsed.filter(
-              (item): item is string => typeof item === "string" && item.length > 0,
+              (item): item is string =>
+                typeof item === "string" && item.length > 0,
             );
             dismissedNoticeIdsRef.current = new Set(ids);
           }
@@ -917,7 +931,9 @@ export default function RecordDoneScreen() {
     setHasUnopenedInArchive(unlockedPending.length > 0);
     if (unlockNoticeCapsule) return;
     const next =
-      unlockedPending.find((item) => !dismissedNoticeIdsRef.current.has(item.id)) ?? null;
+      unlockedPending.find(
+        (item) => !dismissedNoticeIdsRef.current.has(item.id),
+      ) ?? null;
     setUnlockNoticeCapsule(next);
   }, [isDismissedNoticeIdsReady, unlockNoticeCapsule]);
 
@@ -930,7 +946,11 @@ export default function RecordDoneScreen() {
     dismissedNoticeIdsRef.current.add(unlockNoticeCapsule.id);
     await persistDismissedNoticeIds();
     setUnlockNoticeCapsule(null);
-  }, [isDevUnlockPreviewVisible, persistDismissedNoticeIds, unlockNoticeCapsule]);
+  }, [
+    isDevUnlockPreviewVisible,
+    persistDismissedNoticeIds,
+    unlockNoticeCapsule,
+  ]);
 
   const openUnlockNoticeCapsule = useCallback(async () => {
     if (isDevUnlockPreviewVisible) {
@@ -948,7 +968,7 @@ export default function RecordDoneScreen() {
     void refreshUnlockNotice();
     router.push({
       pathname: "/record/kaihuu",
-      params: { capsuleId },
+      params: { capsuleId, fromUnlockNotice: "1" },
     });
   }, [
     isDevUnlockPreviewVisible,
@@ -962,7 +982,13 @@ export default function RecordDoneScreen() {
     () =>
       Gesture.Pan()
         .runOnJS(true)
-        .enabled(!(activeTab === "rec" && flow === FLOW.RECORD && (isRecordPressing || isRecording)))
+        .enabled(
+          !(
+            activeTab === "rec" &&
+            flow === FLOW.RECORD &&
+            (isRecordPressing || isRecording)
+          ),
+        )
         .activeOffsetX([-18, 18])
         .failOffsetY([-24, 24])
         .minDistance(18)
@@ -1033,8 +1059,8 @@ export default function RecordDoneScreen() {
         isArchiveTab
           ? require("../../assets/images/home.png")
           : flow !== FLOW.REVIEW && isLockedToday
-          ? require("../../assets/images/norec_background.png")
-          : require("../../assets/images/home.png")
+            ? require("../../assets/images/norec_background.png")
+            : require("../../assets/images/home.png")
       }
       resizeMode="cover"
       style={styles.background}
@@ -1072,475 +1098,514 @@ export default function RecordDoneScreen() {
       <GestureDetector gesture={panGesture}>
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.container}>
-          <View
-            pointerEvents={
-              isProjectModalVisible || isSaveComplete ? "none" : "auto"
-            }
-            style={styles.screenContent}
-          >
-            {showPushNotice ? (
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  styles.pushNoticeWrap,
-                  {
-                    opacity: pushNoticeOpacity,
-                    transform: [{ translateX: pushNoticeTranslateX }],
-                  },
-                ]}
-              >
-                <View style={styles.pushNoticeInner}>
-                  <PushAppBaseSvg width={270} height={82} />
-                  <View style={styles.pushNoticeContent}>
-                    <Image
-                      source={require("../../assets/images/key.png")}
-                      style={styles.pushNoticeKeyImage}
-                      resizeMode="contain"
-                    />
-                    <Text
-                      style={[
-                        styles.pushNoticeText,
-                        zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
-                      ]}
-                    >
-                      一年前の音声が届いています
-                    </Text>
-                  </View>
-                </View>
-              </Animated.View>
-            ) : null}
-            <View style={styles.topArea}>
-              {flow === FLOW.REVIEW && activeTab === "rec" ? (
-                <View style={styles.retakeTopRow}>
-                  <Pressable
-                    onPress={retakeRecording}
-                    hitSlop={10}
-                    style={styles.retakeTopButton}
-                  >
-                    <Text style={styles.retakeTopLabel}>撮り直す</Text>
-                    <Text style={styles.retakeTopArrow}>←</Text>
-                  </Pressable>
-                </View>
-              ) : null}
-
-            <RecordToolbar
-              active={activeTab}
-              onPressRec={() => setActiveTab("rec")}
-              onPressArchive={() => setActiveTab("archive")}
-              hasUnopenedInArchive={hasUnopenedInArchive}
-            />
-            </View>
-
             <View
-              style={styles.slideViewport}
-              onLayout={(e) => setSlideWidth(e.nativeEvent.layout.width)}
+              pointerEvents={
+                isProjectModalVisible || isSaveComplete ? "none" : "auto"
+              }
+              style={styles.screenContent}
             >
-              <Animated.View
-                style={[
-                  styles.slideTrack,
-                  { width: slideWidth * 2 },
-                  {
-                    transform: [{ translateX: slideX }],
-                  },
-                ]}
-              >
-                <View style={[styles.slidePane, { width: slideWidth }]}>
-                  <Text style={styles.dateText}>{formatDisplayDate(now)}</Text>
+              {showPushNotice ? (
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.pushNoticeWrap,
+                    {
+                      opacity: pushNoticeOpacity,
+                      transform: [{ translateX: pushNoticeTranslateX }],
+                    },
+                  ]}
+                >
+                  <View style={styles.pushNoticeInner}>
+                    <PushAppBaseSvg width={270} height={82} />
+                    <View style={styles.pushNoticeContent}>
+                      <Image
+                        source={require("../../assets/images/key.png")}
+                        style={styles.pushNoticeKeyImage}
+                        resizeMode="contain"
+                      />
+                      <Text
+                        style={[
+                          styles.pushNoticeText,
+                          zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
+                        ]}
+                      >
+                        一年前の音声が届いています
+                      </Text>
+                    </View>
+                  </View>
+                </Animated.View>
+              ) : null}
+              <View style={styles.topArea}>
+                {flow === FLOW.REVIEW && activeTab === "rec" ? (
+                  <View style={styles.retakeTopRow}>
+                    <Pressable
+                      onPress={retakeRecording}
+                      hitSlop={10}
+                      style={styles.retakeTopButton}
+                    >
+                      <Text style={styles.retakeTopLabel}>撮り直す</Text>
+                      <Text style={styles.retakeTopArrow}>←</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
 
-                  <View style={styles.centerArea}>
-                    {flow === FLOW.RECORD ? (
-                      <View style={styles.flowLayer}>
-                        <View
-                          style={[
-                            styles.recordGroup,
-                            { marginTop: RECORD_BUTTON_OFFSET_Y },
-                          ]}
-                        >
-                          <Animated.View
+                <RecordToolbar
+                  active={activeTab}
+                  onPressRec={() => setActiveTab("rec")}
+                  onPressArchive={() => setActiveTab("archive")}
+                  hasUnopenedInArchive={hasUnopenedInArchive}
+                />
+              </View>
+
+              <View
+                style={styles.slideViewport}
+                onLayout={(e) => setSlideWidth(e.nativeEvent.layout.width)}
+              >
+                <Animated.View
+                  style={[
+                    styles.slideTrack,
+                    { width: slideWidth * 2 },
+                    {
+                      transform: [{ translateX: slideX }],
+                    },
+                  ]}
+                >
+                  <View style={[styles.slidePane, { width: slideWidth }]}>
+                    <Text style={styles.dateText}>
+                      {formatDisplayDate(now)}
+                    </Text>
+
+                    <View style={styles.centerArea}>
+                      {flow === FLOW.RECORD ? (
+                        <View style={styles.flowLayer}>
+                          <View
                             style={[
-                              styles.buttonWrap,
-                              isRecordVisualActive && styles.recordingGlow,
-                              { transform: [{ scale: pulse }] },
+                              styles.recordGroup,
+                              { marginTop: RECORD_BUTTON_OFFSET_Y },
+                            ]}
+                          >
+                            <Animated.View
+                              style={[
+                                styles.buttonWrap,
+                                isRecordVisualActive && styles.recordingGlow,
+                                { transform: [{ scale: pulse }] },
+                              ]}
+                            >
+                              <Pressable
+                                style={styles.buttonPressable}
+                                onPressIn={() => {
+                                  setIsRecordPressing(true);
+                                  void startRecording();
+                                }}
+                                onPressOut={handleRecordPressOut}
+                                pressRetentionOffset={{
+                                  top: 10000,
+                                  left: 10000,
+                                  right: 10000,
+                                  bottom: 10000,
+                                }}
+                                hitSlop={12}
+                                disabled={isLockedToday}
+                              >
+                                <Image
+                                  source={
+                                    isLockedToday
+                                      ? require("../../assets/images/norecButton.png")
+                                      : isRecordVisualActive
+                                        ? require("../../assets/images/onrec.png")
+                                        : require("../../assets/images/home_voiceButton.png")
+                                  }
+                                  style={[
+                                    styles.voiceButton,
+                                    isLockedToday && styles.voiceButtonDisabled,
+                                    isLockedToday && {
+                                      transform: [
+                                        { translateY: NOREC_BUTTON_NUDGE_Y },
+                                      ],
+                                    },
+                                    { tintColor: undefined },
+                                  ]}
+                                  resizeMode="contain"
+                                />
+                              </Pressable>
+                            </Animated.View>
+                            {!isLockedToday ? (
+                              <Text
+                                style={[
+                                  styles.recordTimeText,
+                                  isRecordingWarning &&
+                                    styles.recordTimeTextWarning,
+                                ]}
+                              >
+                                {formatMillis(elapsedMs)}
+                              </Text>
+                            ) : null}
+                          </View>
+                        </View>
+                      ) : (
+                        <View style={styles.flowLayer}>
+                          <View
+                            style={[
+                              styles.playerGroup,
+                              { marginTop: REVIEW_BUTTON_OFFSET_Y },
                             ]}
                           >
                             <Pressable
-                              style={styles.buttonPressable}
-                              onPressIn={() => {
-                                setIsRecordPressing(true);
-                                void startRecording();
-                              }}
-                              onPressOut={handleRecordPressOut}
-                              pressRetentionOffset={{
-                                top: 10000,
-                                left: 10000,
-                                right: 10000,
-                                bottom: 10000,
-                              }}
-                              hitSlop={12}
-                              disabled={isLockedToday}
+                              onPress={togglePlay}
+                              style={[
+                                styles.playerButton,
+                                !isLoaded && styles.disabled,
+                              ]}
+                              disabled={!isLoaded}
                             >
                               <Image
                                 source={
-                                  isLockedToday
-                                    ? require("../../assets/images/norecButton.png")
-                                    : isRecordVisualActive
-                                      ? require("../../assets/images/onrec.png")
-                                      : require("../../assets/images/home_voiceButton.png")
+                                  isPlaying
+                                    ? require("../../assets/images/stopButton.png")
+                                    : require("../../assets/images/saiseiButton.png")
                                 }
-                                style={[
-                                  styles.voiceButton,
-                                  isLockedToday && styles.voiceButtonDisabled,
-                                  isLockedToday && { transform: [{ translateY: NOREC_BUTTON_NUDGE_Y }] },
-                                  { tintColor: undefined },
-                                ]}
+                                style={styles.playerImage}
                                 resizeMode="contain"
                               />
                             </Pressable>
-                          </Animated.View>
-                          {!isLockedToday ? (
-                            <Text
-                              style={[
-                                styles.recordTimeText,
-                                isRecordingWarning && styles.recordTimeTextWarning,
-                              ]}>
-                              {formatMillis(elapsedMs)}
-                            </Text>
-                          ) : null}
+                          </View>
                         </View>
-                      </View>
-                    ) : (
-                      <View style={styles.flowLayer}>
-                        <View
-                          style={[
-                            styles.playerGroup,
-                            { marginTop: REVIEW_BUTTON_OFFSET_Y },
-                          ]}
-                        >
-                          <Pressable
-                            onPress={togglePlay}
-                            style={[
-                              styles.playerButton,
-                              !isLoaded && styles.disabled,
-                            ]}
-                            disabled={!isLoaded}
+                      )}
+                    </View>
+
+                    <View style={styles.bottomArea}>
+                      {flow === FLOW.REVIEW ? (
+                        <View style={styles.progressRow}>
+                          <Text style={styles.timeText}>{timeLabel}</Text>
+
+                          <View
+                            style={styles.sliderWrap}
+                            onLayout={(e) =>
+                              setSliderWidth(e.nativeEvent.layout.width)
+                            }
                           >
-                            <Image
-                              source={
-                                isPlaying
-                                  ? require("../../assets/images/stopButton.png")
-                                  : require("../../assets/images/saiseiButton.png")
-                              }
-                              style={styles.playerImage}
-                              resizeMode="contain"
+                            <Slider
+                              value={currentSliderValue}
+                              minimumValue={0}
+                              maximumValue={Math.max(durationMillis, 1)}
+                              onSlidingStart={onSlidingStart}
+                              onValueChange={onSliderValueChange}
+                              onSlidingComplete={onSlidingComplete}
+                              tapToSeek
+                              minimumTrackTintColor="#a7a2ae"
+                              maximumTrackTintColor="rgba(207, 200, 214, 0.9)"
+                              thumbTintColor="transparent"
+                              thumbImage={TRANSPARENT_THUMB}
+                              disabled={!isLoaded}
+                              style={styles.slider}
                             />
-                          </Pressable>
+                            <View
+                              pointerEvents="none"
+                              style={[
+                                styles.customThumb,
+                                {
+                                  left: Math.max(
+                                    0,
+                                    Math.min(sliderWidth - 10, thumbLeft - 5),
+                                  ),
+                                },
+                              ]}
+                            />
+                          </View>
                         </View>
-                      </View>
-                    )}
-                  </View>
+                      ) : null}
 
-                  <View style={styles.bottomArea}>
-                    {flow === FLOW.REVIEW ? (
-                      <View style={styles.progressRow}>
-                        <Text style={styles.timeText}>{timeLabel}</Text>
-
-                        <View
-                          style={styles.sliderWrap}
-                          onLayout={(e) =>
-                            setSliderWidth(e.nativeEvent.layout.width)
+                      {flow === FLOW.REVIEW ? (
+                        <Pressable
+                          style={styles.okButton}
+                          onPress={
+                            isSaveComplete
+                              ? saveProjectAndBack
+                              : openProjectModal
                           }
                         >
-                          <Slider
-                            value={currentSliderValue}
-                            minimumValue={0}
-                            maximumValue={Math.max(durationMillis, 1)}
-                            onSlidingStart={onSlidingStart}
-                            onValueChange={onSliderValueChange}
-                            onSlidingComplete={onSlidingComplete}
-                            tapToSeek
-                            minimumTrackTintColor="#a7a2ae"
-                            maximumTrackTintColor="rgba(207, 200, 214, 0.9)"
-                            thumbTintColor="transparent"
-                            thumbImage={TRANSPARENT_THUMB}
-                            disabled={!isLoaded}
-                            style={styles.slider}
-                          />
-                          <View
-                            pointerEvents="none"
-                            style={[
-                              styles.customThumb,
-                              {
-                                left: Math.max(
-                                  0,
-                                  Math.min(sliderWidth - 10, thumbLeft - 5),
-                                ),
-                              },
-                            ]}
-                          />
-                        </View>
-                      </View>
-                    ) : null}
+                          <Text style={styles.okText}>O K</Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
 
-                    {flow === FLOW.REVIEW ? (
-                      <Pressable
-                        style={styles.okButton}
-                        onPress={
-                          isSaveComplete ? saveProjectAndBack : openProjectModal
-                        }
-                      >
-                        <Text style={styles.okText}>O K</Text>
-                      </Pressable>
+                    {activeTab === "rec" && flow === FLOW.RECORD ? (
+                      <Text style={styles.recordGuideText}>{guideText}</Text>
                     ) : null}
                   </View>
 
-                  {activeTab === "rec" && flow === FLOW.RECORD ? (
-                    <Text style={styles.recordGuideText}>{guideText}</Text>
-                  ) : null}
-
-                </View>
-
-                <View style={[styles.slidePane, { width: slideWidth }]}>
-                  <ArchiveContent embedded onPressRec={() => setActiveTab("rec")} />
-                </View>
-              </Animated.View>
+                  <View style={[styles.slidePane, { width: slideWidth }]}>
+                    <ArchiveContent
+                      embedded
+                      onPressRec={() => setActiveTab("rec")}
+                    />
+                  </View>
+                </Animated.View>
+              </View>
             </View>
-          </View>
 
-          {(isProjectModalVisible || isSaveComplete || showUnlockNoticeOverlay) && (
-            <View style={styles.dimLayer} />
-          )}
-
-          {isSaveComplete && (
-            <Pressable
-              style={styles.savedOverlayRoot}
-              onPress={saveProjectAndBack}
-            >
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  styles.savedMessageWrap,
-                  {
-                    opacity: saveReveal.interpolate({
-                      inputRange: [0, 0.35, 1],
-                      outputRange: [0, 0, 1],
-                    }),
-                    transform: [
-                      {
-                        translateY: saveReveal.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [18, 0],
-                        }),
-                      },
-                    ],
-                  },
-                ]}
-              >
-                <Animated.Text
-                  style={[
-                    styles.savedTitle,
-                    zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
-                    {
-                      opacity: saveReveal.interpolate({
-                        inputRange: [0, 0.2, 0.85],
-                        outputRange: [0, 0, 1],
-                      }),
-                      transform: [
-                        {
-                          translateY: saveReveal.interpolate({
-                            inputRange: [0, 0.2, 1],
-                            outputRange: [24, 24, 0],
-                          }),
-                        },
-                      ],
-                    },
-                  ]}
-                >
-                  {savedProjectName}
-                </Animated.Text>
-                <Animated.Text
-                  style={[
-                    styles.savedSubText,
-                    zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
-                    {
-                      opacity: saveReveal.interpolate({
-                        inputRange: [0, 0.4, 1],
-                        outputRange: [0, 0, 1],
-                      }),
-                      transform: [
-                        {
-                          translateY: saveReveal.interpolate({
-                            inputRange: [0, 0.4, 1],
-                            outputRange: [18, 18, 0],
-                          }),
-                        },
-                      ],
-                    },
-                  ]}
-                >
-                  を保管しました。
-                </Animated.Text>
-              </Animated.View>
-
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  styles.savedBottomRow,
-                  {
-                    opacity: saveReveal.interpolate({
-                      inputRange: [0, 0.58, 1],
-                      outputRange: [0, 0, 1],
-                    }),
-                    transform: [
-                      {
-                        translateY: saveReveal.interpolate({
-                          inputRange: [0, 0.58, 1],
-                          outputRange: [14, 14, 0],
-                        }),
-                      },
-                    ],
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.deliveryText,
-                    zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
-                  ]}
-                >
-                  <Text style={styles.deliveryDateText}>
-                    {deliveryDateText}
-                  </Text>
-                  {" のあなたに届きます"}
-                </Text>
-              </Animated.View>
-            </Pressable>
-          )}
-
-          <Modal
-            visible={isProjectModalVisible}
-            transparent
-            animationType="fade"
-            onRequestClose={closeProjectModal}
-          >
-            <View style={styles.modalRoot}>
-              <Pressable
-                style={styles.modalBackdropPressArea}
-                onPress={closeProjectModal}
-              />
-              <View style={styles.modalCard}>
-                <Text style={styles.modalTitle}>テープ名</Text>
-                <View style={styles.inputWrap}>
-                  <TextInput
-                    value={projectName}
-                    onChangeText={setProjectName}
-                    placeholder={projectNamePlaceholder}
-                    placeholderTextColor="#cbc6ce"
-                    style={styles.modalInput}
+            {(isProjectModalVisible ||
+              isSaveComplete ||
+              showUnlockNoticeOverlay) && (
+              <>
+                {isSaveComplete ? (
+                  <BlurView
+                    pointerEvents="none"
+                    intensity={5}
+                    tint="light"
+                    style={styles.saveCompleteBlurLayer}
                   />
-                </View>
-
-                <View style={styles.modalActions}>
-                  <Pressable
-                    style={styles.modalButton}
-                    onPress={closeProjectModal}
-                  >
-                    <Text style={styles.cancelText}>キャンセル</Text>
-                  </Pressable>
-                  <View style={styles.modalDivider} />
-                  <Pressable style={styles.modalButton} onPress={saveProject}>
-                    <Text style={styles.saveText}>保存</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
-          </Modal>
-          {showUnlockNoticeOverlay ? (
-            <Animated.View
-              style={[styles.unlockOverlay, { opacity: unlockOverlayOpacity }]}
-            >
-              <View pointerEvents="none" style={styles.unlockOverlayBackgroundImage}>
-                <Image
-                  source={LETTER_BACKGROUND_IMAGE}
-                  style={styles.unlockOverlayBackgroundImageFill}
-                  resizeMode="stretch"
-                />
-              </View>
-              <Animated.View
-                style={[
-                  styles.unlockOverlayTop,
-                  {
-                    transform: [
-                      { translateY: unlockOverlayContentTranslateY },
-                      { scale: unlockOverlayCloseScale },
-                    ],
-                  },
-                ]}
-              >
-                <Pressable
-                  onPress={closeUnlockNotice}
-                  hitSlop={20}
-                  style={styles.unlockOverlayCloseButton}
-                >
-                  <Text style={styles.unlockOverlayCloseIcon}>×</Text>
-                  <Text
-                    style={[
-                      styles.unlockOverlayCloseLabel,
-                      zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
-                    ]}
-                  >
-                    閉じる
-                  </Text>
-                </Pressable>
-              </Animated.View>
-              <Animated.View
-                style={[
-                  styles.unlockOverlayContent,
-                  { transform: [{ translateY: unlockOverlayContentTranslateY }] },
-                ]}
-              >
-                <Text
+                ) : null}
+                <View
                   style={[
-                    styles.unlockOverlayMessage,
-                    zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
+                    styles.dimLayer,
+                    isSaveComplete && styles.dimLayerForSaveComplete,
+                  ]}
+                />
+              </>
+            )}
+
+            {isSaveComplete && (
+              <Pressable
+                style={styles.savedOverlayRoot}
+                onPress={saveProjectAndBack}
+              >
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.savedMessageWrap,
+                    {
+                      opacity: saveReveal.interpolate({
+                        inputRange: [0, 0.35, 1],
+                        outputRange: [0, 0, 1],
+                      }),
+                      transform: [
+                        {
+                          translateY: saveReveal.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [18, 0],
+                          }),
+                        },
+                      ],
+                    },
                   ]}
                 >
-                  {`${unlockNoticeMessageDate}のあなたのカプセルを開封できます。`}
-                </Text>
-                <Pressable
-                  onPress={() => {
-                    void openUnlockNoticeCapsule();
-                  }}
-                  style={styles.unlockOverlayLetterButton}
-                  hitSlop={10}
-                >
-                  <Animated.Image
-                    source={LETTER_IMAGE}
+                  <Animated.Text
                     style={[
-                      styles.unlockOverlayLetterImage,
+                      styles.savedTitle,
+                      zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
                       {
+                        opacity: saveReveal.interpolate({
+                          inputRange: [0, 0.2, 0.85],
+                          outputRange: [0, 0, 1],
+                        }),
                         transform: [
-                          { scale: unlockOverlayLetterScale },
-                          { scale: unlockOverlayLetterPulseScale },
+                          {
+                            translateY: saveReveal.interpolate({
+                              inputRange: [0, 0.2, 1],
+                              outputRange: [24, 24, 0],
+                            }),
+                          },
                         ],
                       },
                     ]}
-                    resizeMode="contain"
-                  />
-                </Pressable>
+                  >
+                    {savedProjectName}
+                  </Animated.Text>
+                  <Animated.Text
+                    style={[
+                      styles.savedSubText,
+                      zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
+                      {
+                        opacity: saveReveal.interpolate({
+                          inputRange: [0, 0.4, 1],
+                          outputRange: [0, 0, 1],
+                        }),
+                        transform: [
+                          {
+                            translateY: saveReveal.interpolate({
+                              inputRange: [0, 0.4, 1],
+                              outputRange: [18, 18, 0],
+                            }),
+                          },
+                        ],
+                      },
+                    ]}
+                  >
+                    を保管しました。
+                  </Animated.Text>
+                </Animated.View>
+
                 <Animated.View
-                  style={{
-                    transform: [{ translateY: unlockOverlayTouchFloatY }],
-                  }}
+                  pointerEvents="none"
+                  style={[
+                    styles.savedBottomRow,
+                    {
+                      opacity: saveReveal.interpolate({
+                        inputRange: [0, 0.58, 1],
+                        outputRange: [0, 0, 1],
+                      }),
+                      transform: [
+                        {
+                          translateY: saveReveal.interpolate({
+                            inputRange: [0, 0.58, 1],
+                            outputRange: [14, 14, 0],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
                 >
-                  <TouchSvg
-                    width={styles.unlockOverlayTouchImage.width}
-                    height={styles.unlockOverlayTouchImage.height}
-                    style={styles.unlockOverlayTouchImage}
+                  <Text
+                    style={[
+                      styles.deliveryText,
+                      zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
+                    ]}
+                  >
+                    <Text style={styles.deliveryDateText}>
+                      {deliveryDateText}
+                    </Text>
+                    {" のあなたに届きます"}
+                  </Text>
+                </Animated.View>
+              </Pressable>
+            )}
+
+            <Modal
+              visible={isProjectModalVisible}
+              transparent
+              animationType="fade"
+              onRequestClose={closeProjectModal}
+            >
+              <View style={styles.modalRoot}>
+                <Pressable
+                  style={styles.modalBackdropPressArea}
+                  onPress={closeProjectModal}
+                />
+                <View style={styles.modalCard}>
+                  <Text style={styles.modalTitle}>テープ名</Text>
+                  <View style={styles.inputWrap}>
+                    <TextInput
+                      value={projectName}
+                      onChangeText={setProjectName}
+                      placeholder={projectNamePlaceholder}
+                      placeholderTextColor="#cbc6ce"
+                      style={styles.modalInput}
+                    />
+                  </View>
+
+                  <View style={styles.modalActions}>
+                    <Pressable
+                      style={styles.modalButton}
+                      onPress={closeProjectModal}
+                    >
+                      <Text style={styles.cancelText}>キャンセル</Text>
+                    </Pressable>
+                    <View style={styles.modalDivider} />
+                    <Pressable style={styles.modalButton} onPress={saveProject}>
+                      <Text style={styles.saveText}>保存</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            </Modal>
+            {showUnlockNoticeOverlay ? (
+              <Animated.View
+                style={[
+                  styles.unlockOverlay,
+                  { opacity: unlockOverlayOpacity },
+                ]}
+              >
+                <View
+                  pointerEvents="none"
+                  style={styles.unlockOverlayBackgroundImage}
+                >
+                  <Image
+                    source={LETTER_BACKGROUND_IMAGE}
+                    style={styles.unlockOverlayBackgroundImageFill}
+                    resizeMode="stretch"
                   />
+                </View>
+                <Animated.View
+                  style={[
+                    styles.unlockOverlayTop,
+                    {
+                      transform: [
+                        { translateY: unlockOverlayContentTranslateY },
+                        { scale: unlockOverlayCloseScale },
+                      ],
+                    },
+                  ]}
+                >
+                  <Pressable
+                    onPress={closeUnlockNotice}
+                    hitSlop={20}
+                    style={styles.unlockOverlayCloseButton}
+                  >
+                    <Text style={styles.unlockOverlayCloseIcon}>×</Text>
+                    <Text
+                      style={[
+                        styles.unlockOverlayCloseLabel,
+                        zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
+                      ]}
+                    >
+                      閉じる
+                    </Text>
+                  </Pressable>
+                </Animated.View>
+                <Animated.View
+                  style={[
+                    styles.unlockOverlayContent,
+                    {
+                      transform: [
+                        { translateY: unlockOverlayContentTranslateY },
+                      ],
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.unlockOverlayMessage,
+                      zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
+                    ]}
+                  >
+                    {`${unlockNoticeMessageDate}のあなたのカプセルを開封できます。`}
+                  </Text>
+                  <Pressable
+                    onPress={() => {
+                      void openUnlockNoticeCapsule();
+                    }}
+                    style={styles.unlockOverlayLetterButton}
+                    hitSlop={10}
+                  >
+                    <Animated.Image
+                      source={LETTER_IMAGE}
+                      style={[
+                        styles.unlockOverlayLetterImage,
+                        {
+                          transform: [
+                            { scale: unlockOverlayLetterScale },
+                            { scale: unlockOverlayLetterPulseScale },
+                          ],
+                        },
+                      ]}
+                      resizeMode="contain"
+                    />
+                  </Pressable>
+                  <Animated.View
+                    style={{
+                      transform: [{ translateY: unlockOverlayTouchFloatY }],
+                    }}
+                  >
+                    <TouchSvg
+                      width={styles.unlockOverlayTouchImage.width}
+                      height={styles.unlockOverlayTouchImage.height}
+                      style={styles.unlockOverlayTouchImage}
+                    />
+                  </Animated.View>
                 </Animated.View>
               </Animated.View>
-            </Animated.View>
-          ) : null}
+            ) : null}
           </View>
         </SafeAreaView>
       </GestureDetector>
@@ -1588,7 +1653,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 34,
     right: 14,
-    top:10,
+    top: 10,
     bottom: 10,
     flexDirection: "row",
     alignItems: "center",
@@ -1801,6 +1866,16 @@ const styles = StyleSheet.create({
     bottom: -120,
     backgroundColor: "rgba(209, 209, 209, 0.32)",
   },
+  dimLayerForSaveComplete: {
+    backgroundColor: "rgba(232, 232, 232, 0.46)",
+  },
+  saveCompleteBlurLayer: {
+    position: "absolute",
+    left: -40,
+    right: -40,
+    top: -120,
+    bottom: -120,
+  },
   savedOverlayRoot: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
@@ -1962,13 +2037,14 @@ const styles = StyleSheet.create({
     color: "#111111",
     fontSize: 40,
     lineHeight: 40,
-    marginLeft:18,
-    marginTop:-27  },
+    marginLeft: 18,
+    marginTop: -27,
+  },
   unlockOverlayCloseLabel: {
     color: "#111111",
     fontSize: 15,
     marginTop: -8,
-    marginLeft:10,
+    marginLeft: 10,
   },
   unlockOverlayContent: {
     flex: 1,
@@ -1990,7 +2066,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   unlockOverlayLetterImage: {
-    width: 250 ,
+    width: 250,
     height: 250,
   },
   unlockOverlayTouchImage: {
@@ -1999,5 +2075,3 @@ const styles = StyleSheet.create({
     height: 98,
   },
 });
-
-

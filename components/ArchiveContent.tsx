@@ -800,7 +800,7 @@ export default function ArchiveContent({
             </View>
           );
 
-          const canSwipeDelete = !isSearching && item.source === "capsule";
+          const canSwipeDelete = item.source === "capsule";
           if (!canSwipeDelete) {
             return <View key={item.id}>{rowContent}</View>;
           }
@@ -1377,7 +1377,7 @@ const styles = StyleSheet.create({
     maxWidth: 360,
     minHeight: 200,
     borderRadius: 32,
-    backgroundColor: "rgb(156, 157, 163)",
+    backgroundColor: "rgba(123, 123, 123, 0.82)",
     overflow: "hidden",
     paddingTop: 28,
   },
@@ -1424,7 +1424,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   confirmModalDeleteText: {
-    color: "rgb(234, 0, 0)",
+    color: "rgb(192, 37, 37)",
     fontSize: 17,
     fontWeight: "700",
     letterSpacing: 2,

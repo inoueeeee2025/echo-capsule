@@ -63,7 +63,12 @@ function formatMillis(millis: number): string {
 }
 
 export default function KaihuuScreen() {
-  const params = useLocalSearchParams<{ mode?: string; capsuleId?: string; transcriptId?: string }>();
+  const params = useLocalSearchParams<{
+    mode?: string;
+    capsuleId?: string;
+    transcriptId?: string;
+    fromUnlockNotice?: string;
+  }>();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isLandscapeViewport = windowWidth > windowHeight;
   const [ydwLoaded] = useFonts({
@@ -435,7 +440,17 @@ export default function KaihuuScreen() {
           <View style={styles.topArea}>
             {activeTab !== "rec" && !showMainArchive ? (
               <Pressable
-                onPress={() => router.replace("/cassette")}
+                onPress={() =>
+                  router.replace({
+                    pathname: "/cassette",
+                    params: {
+                      ...(capsuleId ? { capsuleId } : {}),
+                      ...(params.fromUnlockNotice === "1"
+                        ? { showArrivalIntro: "1" }
+                        : {}),
+                    },
+                  })
+                }
                 hitSlop={8}
                 style={styles.backToCassette}
               >
@@ -861,6 +876,38 @@ const styles = StyleSheet.create({
   },
   ydwBananaslipPlus: {
     fontFamily: "YDWbananaslipplus",
+  },
+
+   arrivalIntroOverlay: {
+    position: "absolute",
+    left: -36,
+    right: -36,
+    top: -72,
+    bottom: -72,
+    zIndex: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  arrivalIntroBlur: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(252, 249, 249, 0.89)",
+  },
+  arrivalIntroDate: {
+    color: "#6f7178",
+    fontSize: 17,
+    marginBottom: 18,
+    fontWeight: "500",
+    letterSpacing: 0.4,
+  },
+  arrivalIntroTitle: {
+    color: "#111217",
+    fontSize: 50,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+  arrivalIntroTitleZen: {
+    fontFamily: "ZenAntiqueSoft_400Regular",
+    fontWeight: "400",
   },
 });
 
