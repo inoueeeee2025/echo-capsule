@@ -455,12 +455,7 @@ export default function RecordDoneScreen() {
   }, [flow]);
 
   useEffect(() => {
-    Animated.timing(slideX, {
-      toValue: activeTab === "rec" ? 0 : -slideWidth,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
+    slideX.setValue(activeTab === "rec" ? 0 : -slideWidth);
   }, [activeTab, slideWidth, slideX]);
 
   useEffect(() => {
@@ -662,6 +657,9 @@ export default function RecordDoneScreen() {
     deliveryDate.setFullYear(deliveryDate.getFullYear() + 1);
     return `${deliveryDate.getFullYear()}年${deliveryDate.getMonth() + 1}月${deliveryDate.getDate()}日`;
   }, [lastRecordedAtMs]);
+  const projectNamePlaceholder = useMemo(() => {
+    return `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}/${String(now.getDate()).padStart(2, "0")}`;
+  }, [now]);
 
   const guideText =
     flow === FLOW.REVIEW
@@ -1339,12 +1337,12 @@ export default function RecordDoneScreen() {
                 onPress={closeProjectModal}
               />
               <View style={styles.modalCard}>
-                <Text style={styles.modalTitle}>プロジェクト名</Text>
+                <Text style={styles.modalTitle}>テープ名</Text>
                 <View style={styles.inputWrap}>
                   <TextInput
                     value={projectName}
                     onChangeText={setProjectName}
-                    placeholder="YYYY/MM/DD"
+                    placeholder={projectNamePlaceholder}
                     placeholderTextColor="#cbc6ce"
                     style={styles.modalInput}
                   />

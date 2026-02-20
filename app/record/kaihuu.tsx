@@ -17,7 +17,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
   Animated,
-  Easing,
   Image,
   ImageBackground,
   Pressable,
@@ -245,12 +244,7 @@ export default function KaihuuScreen() {
   }, [isPlaying, isSliding, selectedCapsuleAudioUri]);
 
   useEffect(() => {
-    Animated.timing(slideX, {
-      toValue: activeTab === "rec" ? 0 : -slideWidth,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
+    slideX.setValue(activeTab === "rec" ? 0 : -slideWidth);
   }, [activeTab, slideWidth, slideX]);
 
   const currentSliderValue = isSliding ? sliderMillis : positionMillis;

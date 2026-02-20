@@ -56,6 +56,14 @@ export async function updateCapsule(
   return nextItem;
 }
 
+export async function removeCapsule(id: string): Promise<boolean> {
+  const current = await loadCapsules();
+  const next = current.filter((item) => item.id !== id);
+  if (next.length === current.length) return false;
+  await saveCapsules(next);
+  return true;
+}
+
 export function isCapsuleUnlocked(item: CapsuleRecord, nowMs = Date.now()): boolean {
   return nowMs >= item.unlockAtMs;
 }

@@ -1,10 +1,18 @@
-import { useFocusEffect } from "@react-navigation/native";
+﻿import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PlayCircleSvg from "@/assets/images/Play_circle.svg";
-import { loadCapsules, toDateKeyFromMs, updateCapsule } from "@/src/capsules/storage";
+import TrashSvg from "@/assets/images/Trash.svg";
+import {
+  loadCapsules,
+  removeCapsule,
+  toDateKeyFromMs,
+  updateCapsule,
+} from "@/src/capsules/storage";
+import { Swipeable } from "react-native-gesture-handler";
 import {
   Alert,
+  Animated,
   Image,
   Keyboard,
   Modal,
@@ -25,6 +33,8 @@ type RecordingItem = {
   isLocked: boolean;
   isUnopened: boolean;
   source: "dummy" | "capsule";
+  unlockAtMs?: number;
+  openedAtMs?: number | null;
 };
 
 type ArchiveContentProps = {
@@ -55,18 +65,126 @@ const LIST_TITLE_WEIGHT = "400" as const;
 const GREEN_DOT_IMAGE = require("../assets/images/green.png");
 
 const DUMMY_RECORDINGS: RecordingItem[] = [
-  { id: "r1", title: "project 1", durationSec: 230, date: "2027-01-31", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
-  { id: "r2", title: "project 1", durationSec: 230, date: "2027-01-31", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
-  { id: "r3", title: "project 1", durationSec: 230, date: "2027-01-31", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
-  { id: "r4", title: "design memo", durationSec: 186, date: "2025-09-16", hasTranscript: false, isLocked: false, isUnopened: false, source: "dummy" },
-  { id: "r5", title: "morning log", durationSec: 143, date: "2025-09-16", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
-  { id: "r6", title: "weekly review", durationSec: 301, date: "2025-09-25", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
-  { id: "r7", title: "brainstorm", durationSec: 208, date: "2025-09-11", hasTranscript: false, isLocked: false, isUnopened: false, source: "dummy" },
-  { id: "r8", title: "interview", durationSec: 355, date: "2025-09-01", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
-  { id: "r9", title: "afternoon log", durationSec: 122, date: "2025-08-30", hasTranscript: false, isLocked: false, isUnopened: false, source: "dummy" },
-  { id: "r10", title: "user test", durationSec: 276, date: "2025-08-18", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
-  { id: "r11", title: "project 2", durationSec: 264, date: "2025-07-07", hasTranscript: true, isLocked: false, isUnopened: false, source: "dummy" },
-  { id: "r12", title: "meeting", durationSec: 198, date: "2025-06-05", hasTranscript: false, isLocked: false, isUnopened: false, source: "dummy" },
+  {
+    id: "r1",
+    title: "project 1",
+    durationSec: 230,
+    date: "2027-01-31",
+    hasTranscript: true,
+    isLocked: false,
+    isUnopened: false,
+    source: "dummy",
+  },
+  {
+    id: "r2",
+    title: "project 1",
+    durationSec: 230,
+    date: "2027-01-31",
+    hasTranscript: true,
+    isLocked: false,
+    isUnopened: false,
+    source: "dummy",
+  },
+  {
+    id: "r3",
+    title: "project 1",
+    durationSec: 230,
+    date: "2027-01-31",
+    hasTranscript: true,
+    isLocked: false,
+    isUnopened: false,
+    source: "dummy",
+  },
+  {
+    id: "r4",
+    title: "design memo",
+    durationSec: 186,
+    date: "2025-09-16",
+    hasTranscript: false,
+    isLocked: false,
+    isUnopened: false,
+    source: "dummy",
+  },
+  {
+    id: "r5",
+    title: "morning log",
+    durationSec: 143,
+    date: "2025-09-16",
+    hasTranscript: true,
+    isLocked: false,
+    isUnopened: false,
+    source: "dummy",
+  },
+  {
+    id: "r6",
+    title: "weekly review",
+    durationSec: 301,
+    date: "2025-09-25",
+    hasTranscript: true,
+    isLocked: false,
+    isUnopened: false,
+    source: "dummy",
+  },
+  {
+    id: "r7",
+    title: "brainstorm",
+    durationSec: 208,
+    date: "2025-09-11",
+    hasTranscript: false,
+    isLocked: false,
+    isUnopened: false,
+    source: "dummy",
+  },
+  {
+    id: "r8",
+    title: "interview",
+    durationSec: 355,
+    date: "2025-09-01",
+    hasTranscript: true,
+    isLocked: false,
+    isUnopened: false,
+    source: "dummy",
+  },
+  {
+    id: "r9",
+    title: "afternoon log",
+    durationSec: 122,
+    date: "2025-08-30",
+    hasTranscript: false,
+    isLocked: false,
+    isUnopened: false,
+    source: "dummy",
+  },
+  {
+    id: "r10",
+    title: "user test",
+    durationSec: 276,
+    date: "2025-08-18",
+    hasTranscript: true,
+    isLocked: false,
+    isUnopened: false,
+    source: "dummy",
+  },
+  {
+    id: "r11",
+    title: "project 2",
+    durationSec: 264,
+    date: "2025-07-07",
+    hasTranscript: true,
+    isLocked: false,
+    isUnopened: false,
+    source: "dummy",
+  },
+  {
+    id: "r12",
+    title: "meeting",
+    durationSec: 198,
+    date: "2025-06-05",
+    hasTranscript: false,
+    isLocked: false,
+    isUnopened: false,
+    source: "dummy",
+  },
 ];
 
 function toDateKey(date: Date): string {
@@ -115,6 +233,7 @@ export default function ArchiveContent({
   onPressTranscript,
 }: ArchiveContentProps) {
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [isInitialLoaded, setIsInitialLoaded] = useState(false);
 
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardDidShow", () => {
@@ -137,22 +256,17 @@ export default function ArchiveContent({
   const isSvgReady = typeof PlayCircleSvg !== "number";
   const router = useRouter();
   const [capsuleItems, setCapsuleItems] = useState<RecordingItem[]>([]);
-  const isCapsuleUnlockedNow = useCallback(async (capsuleId: string) => {
-    const list = await loadCapsules();
-    const target = list.find((item) => item.id === capsuleId);
-    if (!target) return false;
-    return Date.now() >= target.unlockAtMs;
-  }, []);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [confirmDeleteItem, setConfirmDeleteItem] =
+    useState<RecordingItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
+  const openSwipeIdRef = useRef<string | null>(null);
   const openTranscript = (item: RecordingItem) => {
     Keyboard.dismiss();
     if (item.isLocked) return;
     if (item.source === "capsule") {
       void (async () => {
-        const unlocked = await isCapsuleUnlockedNow(item.id);
-        if (!unlocked) {
-          void reloadCapsules();
-          return;
-        }
         if (item.isUnopened) {
           await updateCapsule(item.id, { openedAtMs: Date.now() });
           void reloadCapsules();
@@ -177,11 +291,6 @@ export default function ArchiveContent({
     if (item.isLocked) return;
     if (item.source === "capsule") {
       void (async () => {
-        const unlocked = await isCapsuleUnlockedNow(item.id);
-        if (!unlocked) {
-          void reloadCapsules();
-          return;
-        }
         if (item.isUnopened) {
           await updateCapsule(item.id, { openedAtMs: Date.now() });
           void reloadCapsules();
@@ -201,7 +310,6 @@ export default function ArchiveContent({
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [yearPickerOpen, setYearPickerOpen] = useState(false);
   const reloadCapsules = useCallback(async () => {
-    const nowMs = Date.now();
     const capsules = await loadCapsules();
     const mapped: RecordingItem[] = capsules.map((item) => ({
       id: item.id,
@@ -209,12 +317,25 @@ export default function ArchiveContent({
       durationSec: item.durationSec,
       date: toDateKeyFromMs(item.unlockAtMs),
       hasTranscript: item.hasTranscript,
-      isLocked: nowMs < item.unlockAtMs,
+      isLocked: false,
       isUnopened: item.openedAtMs == null,
       source: "capsule",
+      unlockAtMs: item.unlockAtMs,
+      openedAtMs: item.openedAtMs,
     }));
     setCapsuleItems(mapped);
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      await reloadCapsules();
+      if (mounted) setIsInitialLoaded(true);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [reloadCapsules]);
 
   useFocusEffect(
     useCallback(() => {
@@ -223,20 +344,33 @@ export default function ArchiveContent({
   );
   useEffect(() => {
     const id = setInterval(() => {
-      void reloadCapsules();
+      setNowMs(Date.now());
     }, 1000);
     return () => clearInterval(id);
-  }, [reloadCapsules]);
+  }, []);
 
   const monthIndex = currentMonth.getMonth();
   const year = currentMonth.getFullYear();
 
+  const computedCapsuleItems = useMemo(() => {
+    return capsuleItems.map((item) => {
+      if (item.source !== "capsule" || typeof item.unlockAtMs !== "number") {
+        return item;
+      }
+      return {
+        ...item,
+        isLocked: nowMs < item.unlockAtMs,
+        isUnopened: item.openedAtMs == null,
+      };
+    });
+  }, [capsuleItems, nowMs]);
+
   const sortedLatest = useMemo(() => {
-    return [...capsuleItems, ...DUMMY_RECORDINGS].sort((a, b) => {
+    return [...computedCapsuleItems, ...DUMMY_RECORDINGS].sort((a, b) => {
       if (a.date === b.date) return b.id.localeCompare(a.id);
       return b.date.localeCompare(a.date);
     });
-  }, [capsuleItems]);
+  }, [computedCapsuleItems]);
 
   const dotDateKeys = useMemo(() => {
     const prefix = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
@@ -267,23 +401,27 @@ export default function ArchiveContent({
     () => sortedLatest.filter((item) => !item.isLocked).slice(0, 10),
     [sortedLatest],
   );
-  const searchableList = useMemo(
-    () => sortedLatest,
-    [sortedLatest],
-  );
+  const searchableList = useMemo(() => sortedLatest, [sortedLatest]);
 
   const visibleList = useMemo(() => {
     const keyword = searchText.trim().toLowerCase();
     if (!keyword) return visibleBaseList;
-    return searchableList.filter((item) => item.title.toLowerCase().includes(keyword));
+    return searchableList.filter((item) =>
+      item.title.toLowerCase().includes(keyword),
+    );
   }, [searchText, searchableList, visibleBaseList]);
 
   const selectedDateItems = useMemo(() => {
     if (!selectedDateKey) return [];
-    return sortedLatest.filter((item) => item.date === selectedDateKey && !item.isLocked);
+    return sortedLatest.filter(
+      (item) => item.date === selectedDateKey && !item.isLocked,
+    );
   }, [selectedDateKey, sortedLatest]);
 
-  const cells = useMemo(() => createCalendarCells(year, monthIndex), [monthIndex, year]);
+  const cells = useMemo(
+    () => createCalendarCells(year, monthIndex),
+    [monthIndex, year],
+  );
 
   const isSearching = searchText.trim().length > 0;
   const sectionTitle = isSearching ? "検索結果" : "最新10件";
@@ -300,6 +438,39 @@ export default function ArchiveContent({
     setCurrentMonth(next);
   };
 
+  const handleSwipeWillOpen = useCallback((id: string) => {
+    if (openSwipeIdRef.current && openSwipeIdRef.current !== id) {
+      swipeableRefs.current[openSwipeIdRef.current]?.close();
+    }
+    openSwipeIdRef.current = id;
+  }, []);
+
+  const requestDeleteFromSwipe = useCallback((item: RecordingItem) => {
+    swipeableRefs.current[item.id]?.close();
+    openSwipeIdRef.current = null;
+    setConfirmDeleteItem(item);
+  }, []);
+
+  const confirmDeleteCapsule = useCallback(async () => {
+    if (
+      !confirmDeleteItem ||
+      confirmDeleteItem.source !== "capsule" ||
+      isDeleting
+    )
+      return;
+    setIsDeleting(true);
+    try {
+      await removeCapsule(confirmDeleteItem.id);
+      await reloadCapsules();
+      if (selectedDateKey === confirmDeleteItem.date) {
+        setSelectedDateKey(null);
+      }
+      setConfirmDeleteItem(null);
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [confirmDeleteItem, isDeleting, reloadCapsules, selectedDateKey]);
+
   const onSelectDay = (date: Date) => {
     const key = toDateKey(date);
     const hasRecordingsOnDay = unlockedDateKeys.has(key);
@@ -308,6 +479,10 @@ export default function ArchiveContent({
     }
     setSelectedDateKey(hasRecordingsOnDay ? key : null);
   };
+
+  if (!isInitialLoaded) {
+    return <View style={[styles.container, embedded && styles.embeddedContainer]} />;
+  }
 
   return (
     <ScrollView
@@ -333,7 +508,8 @@ export default function ArchiveContent({
                 }
                 router.back();
               }}
-              hitSlop={8}>
+              hitSlop={8}
+            >
               <Text style={styles.backLabel}>back</Text>
               <Text style={styles.backArrow}>{"<"}</Text>
             </Pressable>
@@ -349,12 +525,17 @@ export default function ArchiveContent({
                   } else {
                     router.replace("/record/rec");
                   }
-                }}>
+                }}
+              >
                 <Text style={styles.segmentText}>rec</Text>
               </Pressable>
-              <View style={[styles.segmentActivePill, styles.segmentActiveRight]} />
+              <View
+                style={[styles.segmentActivePill, styles.segmentActiveRight]}
+              />
               <View style={styles.segmentHalf} pointerEvents="none">
-                <Text style={[styles.segmentText, styles.segmentTextActive]}>archive</Text>
+                <Text style={[styles.segmentText, styles.segmentTextActive]}>
+                  archive
+                </Text>
               </View>
             </View>
           </View>
@@ -372,13 +553,14 @@ export default function ArchiveContent({
       </View>
 
       {!isSearching ? (
-        <View
-          style={[
-            styles.calendarStack,
-          ]}>
+        <View style={[styles.calendarStack]}>
           <View style={styles.calendarCard}>
             <View style={styles.calendarHeader}>
-              <Pressable style={styles.navArrowWrap} onPress={() => moveMonth(-1)}>
+              <Pressable
+                style={styles.navArrowWrap}
+                onPress={() => moveMonth(-1)}
+                hitSlop={10}
+              >
                 <Image
                   source={require("../assets/images/miniArrow.png")}
                   style={styles.miniArrowLeft}
@@ -386,7 +568,10 @@ export default function ArchiveContent({
                 />
               </Pressable>
 
-              <Pressable style={styles.dropdownPill} onPress={() => setMonthPickerOpen(true)}>
+              <Pressable
+                style={styles.dropdownPill}
+                onPress={() => setMonthPickerOpen(true)}
+              >
                 <Text style={styles.dropdownText}>{MONTHS[monthIndex]}</Text>
                 <Image
                   source={require("../assets/images/miniArrow.png")}
@@ -395,7 +580,10 @@ export default function ArchiveContent({
                 />
               </Pressable>
 
-              <Pressable style={styles.dropdownPill} onPress={() => setYearPickerOpen(true)}>
+              <Pressable
+                style={styles.dropdownPill}
+                onPress={() => setYearPickerOpen(true)}
+              >
                 <Text style={styles.dropdownText}>{String(year)}</Text>
                 <Image
                   source={require("../assets/images/miniArrow.png")}
@@ -404,7 +592,11 @@ export default function ArchiveContent({
                 />
               </Pressable>
 
-              <Pressable style={styles.navArrowWrap} onPress={() => moveMonth(1)}>
+              <Pressable
+                style={styles.navArrowWrap}
+                onPress={() => moveMonth(1)}
+                hitSlop={10}
+              >
                 <Image
                   source={require("../assets/images/miniArrow.png")}
                   style={styles.miniArrowRight}
@@ -430,15 +622,33 @@ export default function ArchiveContent({
                 const hasUnopenedDot = unopenedDotDateKeys.has(key);
                 const isSelected = selectedDateKey === key;
                 return (
-                  <Pressable key={key} style={styles.dayCell} onPress={() => onSelectDay(date)}>
-                    <View style={[styles.dayNumberWrap, isSelected && styles.daySelected]}>
-                      <Text style={[styles.dayNumber, !inCurrentMonth && styles.dayNumberMuted]}>
+                  <Pressable
+                    key={key}
+                    style={styles.dayCell}
+                    onPress={() => onSelectDay(date)}
+                  >
+                    <View
+                      style={[
+                        styles.dayNumberWrap,
+                        isSelected && styles.daySelected,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.dayNumber,
+                          !inCurrentMonth && styles.dayNumberMuted,
+                        ]}
+                      >
                         {date.getDate()}
                       </Text>
                     </View>
                     <View style={styles.dotArea}>
                       {hasUnopenedDot ? (
-                        <Image source={GREEN_DOT_IMAGE} style={styles.unopenedDotImage} resizeMode="contain" />
+                        <Image
+                          source={GREEN_DOT_IMAGE}
+                          style={styles.unopenedDotImage}
+                          resizeMode="contain"
+                        />
                       ) : hasDot ? (
                         <View style={styles.dot} />
                       ) : null}
@@ -456,12 +666,38 @@ export default function ArchiveContent({
                 onPress={() => setSelectedDateKey(null)}
               />
               <View style={styles.deliveryModalCard}>
-                <Text style={styles.deliveryModalDate}>{formatDateJPWithWeekday(selectedDateKey)}</Text>
+                <View style={styles.deliveryModalDateRow}>
+                  <Text style={styles.deliveryModalDate}>
+                    {formatDateJPWithWeekday(selectedDateKey)}
+                  </Text>
+                  <Pressable
+                    onPress={() => {
+                      const target = selectedDateItems[0];
+                      if (!target || target.source !== "capsule") return;
+                      setConfirmDeleteItem(target);
+                    }}
+                    hitSlop={8}
+                    style={styles.deliveryModalTrashButton}
+                  >
+                    <TrashSvg
+                      width={16}
+                      height={16}
+                      style={[
+                        styles.deliveryModalTrashIcon,
+                        selectedDateItems[0]?.source !== "capsule" &&
+                          styles.deliveryModalTrashIconDisabled,
+                      ]}
+                    />
+                  </Pressable>
+                </View>
                 <View style={styles.deliveryModalRow}>
                   <Text
                     style={styles.deliveryModalTitle}
                     numberOfLines={1}
-                    onLongPress={() => showFullTitle(selectedDateItems[0].title)}>
+                    onLongPress={() =>
+                      showFullTitle(selectedDateItems[0].title)
+                    }
+                  >
                     {selectedDateItems[0].title}
                   </Text>
                   <Text style={styles.deliveryModalDuration}>
@@ -470,7 +706,8 @@ export default function ArchiveContent({
                   <Pressable
                     style={styles.playButton}
                     onPress={() => openCassetteScreen(selectedDateItems[0])}
-                    hitSlop={6}>
+                    hitSlop={6}
+                  >
                     {isSvgReady ? (
                       <PlayCircleSvg width={18} height={18} />
                     ) : (
@@ -479,13 +716,16 @@ export default function ArchiveContent({
                   </Pressable>
                   <Pressable
                     onPress={() => openTranscript(selectedDateItems[0])}
-                    hitSlop={6}>
+                    hitSlop={6}
+                  >
                     <Text
                       style={[
                         styles.transcript,
-                        (!selectedDateItems[0].hasTranscript || selectedDateItems[0].isLocked) &&
+                        (!selectedDateItems[0].hasTranscript ||
+                          selectedDateItems[0].isLocked) &&
                           styles.transcriptDisabled,
-                      ]}>
+                      ]}
+                    >
                       T
                     </Text>
                   </Pressable>
@@ -497,53 +737,107 @@ export default function ArchiveContent({
       ) : null}
 
       <View style={styles.sectionHead}>
-        <Image
-          source={require("../assets/images/miniArrow.png")}
-          style={styles.miniArrowDown}
-          resizeMode="contain"
-        />
         <Text style={styles.sectionTitle}>{sectionTitle}</Text>
       </View>
 
       <View style={styles.listWrap}>
-        {visibleList.map((item) => (
-          <View key={item.id} style={styles.row}>
-            {item.isUnopened && !item.isLocked ? (
-              <Image source={GREEN_DOT_IMAGE} style={styles.rowMarkerImage} resizeMode="contain" />
-            ) : null}
-            <Text style={styles.duration}>{formatDuration(item.durationSec)}</Text>
-            <Text
-              style={styles.title}
-              numberOfLines={1}
-              onLongPress={() => showFullTitle(item.title)}>
-              {item.title}
-            </Text>
-            <Text style={styles.date}>{formatDateJP(item.date)}</Text>
-
-            <Pressable
-              style={styles.playButton}
-              onPress={() => openCassetteScreen(item)}
-              hitSlop={6}>
-              {isSvgReady ? (
-                <PlayCircleSvg width={18} height={18} />
-              ) : (
-                <Text style={styles.playIcon}>{">"}</Text>
-              )}
-            </Pressable>
-
-            <Pressable
-              onPress={() => openTranscript(item)}
-              hitSlop={6}>
-              <Text
-                style={[
-                  styles.transcript,
-                  (!item.hasTranscript || item.isLocked) && styles.transcriptDisabled,
-                ]}>
-                T
+        {visibleList.map((item) => {
+          const rowContent = (
+            <View style={styles.row}>
+              {item.isUnopened && !item.isLocked ? (
+                <Image
+                  source={GREEN_DOT_IMAGE}
+                  style={styles.rowMarkerImage}
+                  resizeMode="contain"
+                />
+              ) : null}
+              <Text style={styles.duration}>
+                {formatDuration(item.durationSec)}
               </Text>
-            </Pressable>
-          </View>
-        ))}
+              <Text
+                style={styles.title}
+                numberOfLines={1}
+                onLongPress={() => showFullTitle(item.title)}
+              >
+                {item.title}
+              </Text>
+              <Text style={styles.date}>{formatDateJP(item.date)}</Text>
+
+              <Pressable
+                style={styles.playButton}
+                onPress={() => openCassetteScreen(item)}
+                hitSlop={6}
+              >
+                {isSvgReady ? (
+                  <PlayCircleSvg width={18} height={18} />
+                ) : (
+                  <Text style={styles.playIcon}>{">"}</Text>
+                )}
+              </Pressable>
+
+              <Pressable onPress={() => openTranscript(item)} hitSlop={6}>
+                <Text
+                  style={[
+                    styles.transcript,
+                    (!item.hasTranscript || item.isLocked) &&
+                      styles.transcriptDisabled,
+                  ]}
+                >
+                  T
+                </Text>
+              </Pressable>
+            </View>
+          );
+
+          const canSwipeDelete = !isSearching && item.source === "capsule";
+          if (!canSwipeDelete) {
+            return <View key={item.id}>{rowContent}</View>;
+          }
+
+          return (
+            <Swipeable
+              key={item.id}
+              ref={(ref) => {
+                swipeableRefs.current[item.id] = ref;
+              }}
+              onSwipeableWillOpen={() => handleSwipeWillOpen(item.id)}
+              onSwipeableWillClose={() => {
+                if (openSwipeIdRef.current === item.id)
+                  openSwipeIdRef.current = null;
+              }}
+              overshootRight={false}
+              renderRightActions={(progress) => {
+                const translateX = progress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [82, 0],
+                  extrapolate: "clamp",
+                });
+                const opacity = progress.interpolate({
+                  inputRange: [0, 0.25, 1],
+                  outputRange: [0, 0.35, 1],
+                  extrapolate: "clamp",
+                });
+                return (
+                  <Animated.View
+                    style={{
+                      transform: [{ translateX }],
+                      opacity,
+                    }}
+                  >
+                    <Pressable
+                      onPress={() => requestDeleteFromSwipe(item)}
+                      style={styles.swipeDeleteAction}
+                    >
+                      <Text style={styles.swipeDeleteText}>削除</Text>
+                    </Pressable>
+                  </Animated.View>
+                );
+              }}
+            >
+              {rowContent}
+            </Swipeable>
+          );
+        })}
         {visibleList.length === 0 ? (
           <View style={styles.emptyWrap}>
             <Text style={styles.emptyText}>No recordings found.</Text>
@@ -552,11 +846,60 @@ export default function ArchiveContent({
       </View>
 
       <Modal
+        visible={!!confirmDeleteItem}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!isDeleting) setConfirmDeleteItem(null);
+        }}
+      >
+        <View style={styles.confirmModalRoot}>
+          <Pressable
+            style={styles.confirmModalBackdropPressArea}
+            onPress={() => {
+              if (!isDeleting) setConfirmDeleteItem(null);
+            }}
+          />
+          <View style={styles.confirmModalCard}>
+            <Text style={styles.confirmModalTitle}>本当に削除しますか？</Text>
+            <Text style={styles.confirmModalText}>
+              {confirmDeleteItem?.title ?? ""}
+            </Text>
+            <View style={styles.confirmModalActions}>
+              <Pressable
+                style={styles.confirmModalButton}
+                onPress={() => setConfirmDeleteItem(null)}
+                disabled={isDeleting}
+              >
+                <Text style={styles.confirmModalCancelText}>キャンセル</Text>
+              </Pressable>
+              <View style={styles.confirmModalDivider} />
+              <Pressable
+                style={styles.confirmModalButton}
+                onPress={() => {
+                  void confirmDeleteCapsule();
+                }}
+                disabled={isDeleting}
+              >
+                <Text style={styles.confirmModalDeleteText}>
+                  削除
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={monthPickerOpen}
         transparent
         animationType="fade"
-        onRequestClose={() => setMonthPickerOpen(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setMonthPickerOpen(false)}>
+        onRequestClose={() => setMonthPickerOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setMonthPickerOpen(false)}
+        >
           <View style={styles.modalCard}>
             <ScrollView showsVerticalScrollIndicator={false}>
               {MONTHS.map((m, idx) => (
@@ -566,8 +909,14 @@ export default function ArchiveContent({
                   onPress={() => {
                     setCurrentMonth(new Date(year, idx, 1));
                     setMonthPickerOpen(false);
-                  }}>
-                  <Text style={[styles.modalRowText, idx === monthIndex && styles.modalRowTextActive]}>
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.modalRowText,
+                      idx === monthIndex && styles.modalRowTextActive,
+                    ]}
+                  >
                     {m}
                   </Text>
                 </Pressable>
@@ -581,8 +930,12 @@ export default function ArchiveContent({
         visible={yearPickerOpen}
         transparent
         animationType="fade"
-        onRequestClose={() => setYearPickerOpen(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setYearPickerOpen(false)}>
+        onRequestClose={() => setYearPickerOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setYearPickerOpen(false)}
+        >
           <View style={styles.modalCard}>
             {[2023, 2024, 2025, 2026, 2027, 2028].map((y) => (
               <Pressable
@@ -591,8 +944,14 @@ export default function ArchiveContent({
                 onPress={() => {
                   setCurrentMonth(new Date(y, monthIndex, 1));
                   setYearPickerOpen(false);
-                }}>
-                <Text style={[styles.modalRowText, y === year && styles.modalRowTextActive]}>
+                }}
+              >
+                <Text
+                  style={[
+                    styles.modalRowText,
+                    y === year && styles.modalRowTextActive,
+                  ]}
+                >
                   {y}
                 </Text>
               </Pressable>
@@ -700,7 +1059,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   navArrowWrap: {
-    width: 26,
+    width: 34,
+    height: 34,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -710,13 +1070,13 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   miniArrowRight: {
-    width: 13,
-    height: 13,
+    width: 18,
+    height: 18,
     tintColor: "#8e9092",
   },
   miniArrowLeft: {
-    width: 13,
-    height: 13,
+    width: 18,
+    height: 18,
     tintColor: "#8e9092",
     transform: [{ rotate: "180deg" }],
   },
@@ -825,11 +1185,30 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   deliveryModalDate: {
-    textAlign: "center",
     color: "#141618",
     fontSize: 15,
     fontWeight: "700",
+    marginLeft: 10,
+  },
+  deliveryModalDateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 12,
+  },
+  deliveryModalTrashIcon: {
+    marginLeft: 10,
+    marginTop: 1,
+    opacity: 0.84,
+    height: 2,
+    width: 2,
+  },
+  deliveryModalTrashButton: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  deliveryModalTrashIconDisabled: {
+    opacity: 0.32,
   },
   deliveryModalRow: {
     minHeight: 40,
@@ -871,6 +1250,8 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     color: "#181a1c",
+    fontWeight:500,
+    marginLeft:4,
   },
   listWrap: {
     width: "100%",
@@ -883,6 +1264,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 2,
     columnGap: 10,
+    backgroundColor: "transparent",
+  },
+  swipeDeleteAction: {
+    width: 82,
+    minHeight: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(237, 7, 7, 0.88)",
+    marginLeft:6,
+  },
+  swipeDeleteText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+    letterSpacing: 0.2,
   },
   rowMarkerImage: {
     position: "absolute",
@@ -946,6 +1342,71 @@ const styles = StyleSheet.create({
     color: "#8e9092",
     fontSize: 13,
   },
+  confirmModalRoot: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+  confirmModalBackdropPressArea: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  confirmModalCard: {
+    width: 330,
+    minHeight: 200,
+    borderRadius: 32,
+    backgroundColor: "rgb(156, 157, 163)",
+    overflow: "hidden",
+    paddingTop: 28,
+  },
+  confirmModalTitle: {
+    textAlign: "center",
+    color: "#f2f2f4",
+    fontSize: 18,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    marginTop:10,
+  },
+  confirmModalText: {
+    marginTop: 18,
+    marginBottom: 24,
+    marginHorizontal: 26,
+    color: "#ffffff",
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: "center",
+  },
+  confirmModalActions: {
+    marginTop: "auto",
+    height: 64,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(245, 245, 248, 0.68)",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  confirmModalButton: {
+    flex: 1,
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  confirmModalDivider: {
+    width: 1,
+    height: "100%",
+    backgroundColor: "rgba(245, 245, 248, 0.68)",
+  },
+  confirmModalCancelText: {
+    color: "#f4f4f6",
+    fontSize: 17,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+  confirmModalDeleteText: {
+    color: "rgb(234, 0, 0)",
+    fontSize: 17,
+    fontWeight: "700",
+    letterSpacing: 2,
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.12)",
@@ -976,6 +1437,5 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 30,
   },
-})
-
+});
 
