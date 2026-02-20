@@ -1,34 +1,180 @@
-import { useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { loadCapsules } from "@/src/capsules/storage";
+import {
+  createAudioPlayer,
+  setIsAudioActiveAsync,
+  type AudioPlayer,
+  type AudioStatus,
+} from "expo-audio";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  DeviceEventEmitter,
   Easing,
+  type EmitterSubscription,
   Image,
   ImageBackground,
   Pressable,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const WHEEL_SPIN_MS = 6000;
+const DESIGN_WIDTH = 852;
+const DESIGN_HEIGHT = 393;
+const LEFT_WHEEL_X = 110;
+const LEFT_WHEEL_Y = 90;
 const LEFT_WHEEL_SIZE = 221;
+const RIGHT_WHEEL_X = 70;
+const RIGHT_WHEEL_Y = 60;
 const RIGHT_WHEEL_SIZE = 288;
-const DEV_AUTO_PLAY_ON_MOUNT = true;
+const COVER_LEFT = 16;
+const COVER_TOP = 28;
+const COVER_WIDTH = 729;
+const COVER_HEIGHT = 290;
 
 export default function CassetteScreen() {
   const router = useRouter();
-  const [isPlaying, setIsPlaying] = useState(DEV_AUTO_PLAY_ON_MOUNT);
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const params = useLocalSearchParams<{ capsuleId?: string }>();
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [audioUri, setAudioUri] = useState<string | null>(null);
+  const [activeCapsuleId, setActiveCapsuleId] = useState<string>("");
   const rotateProgress = useRef(new Animated.Value(0)).current;
   const progressRef = useRef(0);
   const loopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const playerRef = useRef<AudioPlayer | null>(null);
+  const playbackSubscriptionRef = useRef<{ remove: () => void } | null>(null);
+  const requestedCapsuleId =
+    typeof params.capsuleId === "string" ? params.capsuleId : "";
 
-  // Hardware integration point:
-  // later, call this from hardware play/stop events.
-  const handleHardwarePlaybackChange = useCallback((next: boolean) => {
-    setIsPlaying(next);
+  const uiScale = useMemo(() => {
+    const byWidth = windowWidth / DESIGN_WIDTH;
+    const byHeight = windowHeight / DESIGN_HEIGHT;
+    return Math.min(byWidth, byHeight);
+  }, [windowHeight, windowWidth]);
+
+  const boardWidth = DESIGN_WIDTH * uiScale;
+  const boardLeft = Math.max(0, (windowWidth - boardWidth) / 2);
+
+  const onPlaybackStatusUpdate = useCallback((status: AudioStatus) => {
+    if (!status.isLoaded) {
+      setIsPlaying(false);
+      return;
+    }
+    setIsPlaying(status.playing);
   }, []);
+
+  const unloadSound = useCallback(async () => {
+    playbackSubscriptionRef.current?.remove();
+    playbackSubscriptionRef.current = null;
+    const current = playerRef.current;
+    playerRef.current = null;
+    if (!current) return;
+    try {
+      current.pause();
+    } catch {}
+    try {
+      current.remove();
+    } catch {}
+  }, []);
+
+  const refreshPlayableCapsule = useCallback(async () => {
+    const list = await loadCapsules();
+    const now = Date.now();
+    const unlocked = list
+      .filter(
+        (item) =>
+          now >= item.unlockAtMs &&
+          typeof item.audioUri === "string" &&
+          item.audioUri.length > 0,
+      )
+      .sort((a, b) => b.unlockAtMs - a.unlockAtMs);
+
+    if (unlocked.length === 0) {
+      setAudioUri(null);
+      setActiveCapsuleId("");
+      return;
+    }
+
+    const byParam = requestedCapsuleId
+      ? unlocked.find((item) => item.id === requestedCapsuleId) ?? null
+      : null;
+    const target = byParam ?? unlocked[0];
+    setAudioUri(target.audioUri);
+    setActiveCapsuleId(target.id);
+  }, [requestedCapsuleId]);
+
+  const handleHardwarePlaybackChange = useCallback((next: boolean) => {
+    const player = playerRef.current;
+    if (!player) return;
+    try {
+      if (next) {
+        player.play();
+      } else {
+        player.pause();
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    const subs: EmitterSubscription[] = [
+      DeviceEventEmitter.addListener("hardware-play", () => {
+        handleHardwarePlaybackChange(true);
+      }),
+      DeviceEventEmitter.addListener("hardware-stop", () => {
+        handleHardwarePlaybackChange(false);
+      }),
+    ];
+    return () => {
+      subs.forEach((sub) => sub.remove());
+    };
+  }, [handleHardwarePlaybackChange]);
+
+  useEffect(() => {
+    void setIsAudioActiveAsync(true);
+    return () => {
+      unloadSound().catch(() => {});
+    };
+  }, [unloadSound]);
+
+  useEffect(() => {
+    void refreshPlayableCapsule();
+  }, [refreshPlayableCapsule]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!audioUri) {
+        await unloadSound();
+        return;
+      }
+      try {
+        await unloadSound();
+        const player = createAudioPlayer({ uri: audioUri }, { updateInterval: 200 });
+        const sub = player.addListener(
+          "playbackStatusUpdate",
+          onPlaybackStatusUpdate,
+        );
+        if (!mounted) {
+          sub.remove();
+          player.remove();
+          return;
+        }
+        playerRef.current = player;
+        playbackSubscriptionRef.current = sub;
+        onPlaybackStatusUpdate(player.currentStatus);
+      } catch {
+        setIsPlaying(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [audioUri, onPlaybackStatusUpdate, unloadSound]);
 
   useEffect(() => {
     const id = rotateProgress.addListener(({ value }) => {
@@ -66,7 +212,7 @@ export default function CassetteScreen() {
       progressRef.current = normalized;
       rotateProgress.setValue(normalized);
     });
-  }, [isPlaying, rotateProgress, progressRef]);
+  }, [isPlaying, rotateProgress]);
 
   useEffect(() => {
     return () => {
@@ -86,80 +232,135 @@ export default function CassetteScreen() {
     inputRange: [0, 1],
     outputRange: ["0deg", "-360deg"],
   });
+  const canPlay = useMemo(() => !!audioUri, [audioUri]);
 
   return (
     <ImageBackground
       source={require("../assets/images/cassette_background.png")}
       resizeMode="cover"
-      style={styles.background}>
+      style={styles.background}
+    >
       <SafeAreaView style={styles.safeArea}>
         <View style={[styles.cassetteArea, styles.cassetteAreaLandscape]}>
-          <View style={[styles.leftWheelSlot, styles.leftWheelSlotLandscape]}>
+          <View
+            style={[
+              styles.leftWheelSlot,
+              {
+                left: boardLeft + LEFT_WHEEL_X * uiScale,
+                top: LEFT_WHEEL_Y * uiScale,
+                width: LEFT_WHEEL_SIZE * uiScale,
+                height: LEFT_WHEEL_SIZE * uiScale,
+              },
+            ]}
+          >
             <Animated.Image
               source={require("../assets/images/leftwheel.png")}
               resizeMode="contain"
-              style={[
-                styles.wheelImage,
-                {
-                  transform: [{ rotate: reverseSpin }],
-                },
-              ]}
+              style={[styles.wheelImage, { transform: [{ rotate: reverseSpin }] }]}
             />
           </View>
-          <View style={[styles.rightWheelSlot, styles.rightWheelSlotLandscape]}>
+          <View
+            style={[
+              styles.rightWheelSlot,
+              {
+                right: boardLeft + RIGHT_WHEEL_X * uiScale,
+                top: RIGHT_WHEEL_Y * uiScale,
+                width: RIGHT_WHEEL_SIZE * uiScale,
+                height: RIGHT_WHEEL_SIZE * uiScale,
+              },
+            ]}
+          >
             <Animated.Image
               source={require("../assets/images/rightwheel.png")}
               resizeMode="contain"
-              style={[
-                styles.wheelImage,
-                {
-                  transform: [{ rotate: spin }],
-                },
-              ]}
+              style={[styles.wheelImage, { transform: [{ rotate: spin }] }]}
             />
           </View>
           <Image
             source={require("../assets/images/cassetteCover.png")}
             resizeMode="cover"
-            style={styles.cassetteCover}
+            style={[
+              styles.cassetteCover,
+              {
+                width: COVER_WIDTH * uiScale,
+                height: COVER_HEIGHT * uiScale,
+                top: COVER_TOP * uiScale,
+                left: boardLeft + COVER_LEFT * uiScale,
+              },
+            ]}
           />
-          
         </View>
+
         <Image
           source={require("../assets/images/cassetteBottomBar.png")}
           resizeMode="stretch"
-          style={styles.bottomBarBackground}
+          style={[
+            styles.bottomBarBackground,
+            {
+              left: boardLeft,
+              width: DESIGN_WIDTH * uiScale,
+              height: 94 * uiScale,
+              bottom: -2 * uiScale,
+            },
+          ]}
         />
-        <View style={styles.bottomBar}>
+        <View
+          style={[
+            styles.bottomBar,
+            {
+              bottom: 15 * uiScale,
+              paddingHorizontal: 24 * uiScale,
+            },
+          ]}
+        >
           <Pressable
             onPress={() => router.back()}
-            style={[styles.bottomAction, styles.backAction]}
-            hitSlop={8}>
+            style={[styles.bottomAction, styles.backAction, { width: 110 * uiScale }]}
+            hitSlop={8}
+          >
             <Image
               source={require("../assets/images/backButton.png")}
               resizeMode="contain"
-              style={styles.bottomButtonImage}
+              style={[
+                styles.bottomButtonImage,
+                { width: 60 * uiScale, height: 60 * uiScale },
+              ]}
             />
-            
           </Pressable>
           <Pressable
-            onPress={() => router.replace("/record/kaihuu")}
-            style={styles.bottomAction}
-            hitSlop={8}>
+            onPress={() =>
+              router.replace({
+                pathname: "/record/kaihuu",
+                params: activeCapsuleId ? { capsuleId: activeCapsuleId } : undefined,
+              })
+            }
+            style={[styles.bottomAction, { width: 110 * uiScale }]}
+            hitSlop={8}
+          >
             <Image
               source={require("../assets/images/mobileButton.png")}
               resizeMode="contain"
-              style={styles.bottomButtonImage}
+              style={[
+                styles.bottomButtonImage,
+                { width: 60 * uiScale, height: 60 * uiScale },
+              ]}
             />
           </Pressable>
         </View>
+
         <Pressable
           onLongPress={() => handleHardwarePlaybackChange(!isPlaying)}
           delayLongPress={700}
           style={styles.devPlaybackToggleZone}
+          disabled={!canPlay}
           hitSlop={16}
         />
 
+        {!canPlay ? (
+          <View style={[styles.unavailableWrap, { bottom: 110 * uiScale }]}>
+            <Text style={styles.unavailableText}>再生できる音声がありません</Text>
+          </View>
+        ) : null}
       </SafeAreaView>
     </ImageBackground>
   );
@@ -182,33 +383,13 @@ const styles = StyleSheet.create({
   },
   leftWheelSlot: {
     position: "absolute",
-    left: "12%",
-    top: "19%",
-    width: "3%",
-    height: "3%",
     zIndex: 2,
     overflow: "visible",
-  },
-  leftWheelSlotLandscape: {
-    left: 110,
-    top: 90,
-    width: LEFT_WHEEL_SIZE,
-    height: LEFT_WHEEL_SIZE,
   },
   rightWheelSlot: {
     position: "absolute",
-    right: "12%",
-    top: "19%",
-    width: "34%",
-    height: "34%",
     zIndex: 2,
     overflow: "visible",
-  },
-  rightWheelSlotLandscape: {
-    right: 70,
-    top: 60,
-    width: RIGHT_WHEEL_SIZE,
-    height: RIGHT_WHEEL_SIZE,
   },
   wheelImage: {
     width: "100%",
@@ -216,21 +397,10 @@ const styles = StyleSheet.create({
   },
   cassetteCover: {
     zIndex: 3,
-    height:290,
-    width:729,
-    top:28,
-    left:16,
+    position: "absolute",
   },
-
-
-
- 
-
- 
   bottomAction: {
-    width: 110,
     alignItems: "center",
-    
   },
   backAction: {
     marginLeft: 8,
@@ -239,21 +409,14 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: 15,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-end",
-    paddingHorizontal: 24,
     paddingBottom: 8,
     zIndex: 5,
   },
   bottomBarBackground: {
     position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: -2,
-    width: 852,
-    height: 94,
     zIndex: 4,
   },
   bottomButtonImage: {
@@ -269,8 +432,17 @@ const styles = StyleSheet.create({
     opacity: 0,
     zIndex: 99,
   },
-
-
-
-
+  unavailableWrap: {
+    position: "absolute",
+    alignSelf: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(10, 10, 12, 0.46)",
+  },
+  unavailableText: {
+    color: "#f3f3f5",
+    fontSize: 12,
+    letterSpacing: 0.2,
+  },
 });

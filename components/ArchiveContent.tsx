@@ -1,6 +1,3 @@
-﻿import { useFocusEffect } from "@react-navigation/native";
-import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PlayCircleSvg from "@/assets/images/Play_circle.svg";
 import TrashSvg from "@/assets/images/Trash.svg";
 import {
@@ -9,7 +6,9 @@ import {
   toDateKeyFromMs,
   updateCapsule,
 } from "@/src/capsules/storage";
-import { Swipeable } from "react-native-gesture-handler";
+import { useFocusEffect } from "@react-navigation/native";
+import { useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -23,6 +22,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { Swipeable } from "react-native-gesture-handler";
 
 type RecordingItem = {
   id: string;
@@ -63,7 +63,9 @@ const LIST_TITLE_NUDGE_X = 2;
 const LIST_TITLE_NUDGE_Y = -3;
 const LIST_TITLE_WEIGHT = "400" as const;
 const GREEN_DOT_IMAGE = require("../assets/images/green.png");
+const CAPSULE_REFRESH_INTERVAL_MS = 1500;
 
+const LEFT_GUTTER = 18;
 const DUMMY_RECORDINGS: RecordingItem[] = [
   {
     id: "r1",
@@ -340,6 +342,12 @@ export default function ArchiveContent({
   useFocusEffect(
     useCallback(() => {
       void reloadCapsules();
+      const id = setInterval(() => {
+        void reloadCapsules();
+      }, CAPSULE_REFRESH_INTERVAL_MS);
+      return () => {
+        clearInterval(id);
+      };
     }, [reloadCapsules]),
   );
   useEffect(() => {
@@ -481,7 +489,9 @@ export default function ArchiveContent({
   };
 
   if (!isInitialLoaded) {
-    return <View style={[styles.container, embedded && styles.embeddedContainer]} />;
+    return (
+      <View style={[styles.container, embedded && styles.embeddedContainer]} />
+    );
   }
 
   return (
@@ -744,6 +754,7 @@ export default function ArchiveContent({
         {visibleList.map((item) => {
           const rowContent = (
             <View style={styles.row}>
+              <View pointerEvents="none" style={styles.rowSeparator} />
               {item.isUnopened && !item.isLocked ? (
                 <Image
                   source={GREEN_DOT_IMAGE}
@@ -881,9 +892,7 @@ export default function ArchiveContent({
                 }}
                 disabled={isDeleting}
               >
-                <Text style={styles.confirmModalDeleteText}>
-                  削除
-                </Text>
+                <Text style={styles.confirmModalDeleteText}>削除</Text>
               </Pressable>
             </View>
           </View>
@@ -966,7 +975,7 @@ export default function ArchiveContent({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 18,
+    paddingHorizontal: "4.5%",
     paddingTop: 4,
   },
   pageContent: {
@@ -995,7 +1004,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   segmentTrack: {
-    width: 190,
+    width: "56%",
+    minWidth: 176,
+    maxWidth: 240,
     height: 44,
     borderRadius: 999,
     backgroundColor: "rgba(178, 182, 184, 0.52)",
@@ -1014,7 +1025,7 @@ const styles = StyleSheet.create({
   segmentActivePill: {
     position: "absolute",
     top: 3,
-    width: 93,
+    width: "49%",
     height: 38,
     borderRadius: 999,
     backgroundColor: "rgba(219, 221, 223, 0.84)",
@@ -1172,8 +1183,8 @@ const styles = StyleSheet.create({
   },
   deliveryModalCard: {
     position: "absolute",
-    left: 22,
-    right: 22,
+    left: "6%",
+    right: "6%",
     top: 165,
     zIndex: 3,
     elevation: 3,
@@ -1181,7 +1192,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "rgba(140, 143, 146, 0.5)",
     backgroundColor: "rgba(247, 247, 248, 0.95)",
-    paddingHorizontal: 22,
+    paddingHorizontal: "6%",
     paddingVertical: 14,
   },
   deliveryModalDate: {
@@ -1223,7 +1234,8 @@ const styles = StyleSheet.create({
     fontWeight: LIST_TITLE_WEIGHT,
   },
   deliveryModalDuration: {
-    width: 62,
+    width: "18%",
+    minWidth: 58,
     color: "#8e9092",
     fontSize: 14,
     textAlign: "right",
@@ -1233,7 +1245,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 18,
     marginBottom: 10,
-    paddingHorizontal: 2,
+    paddingLeft: LEFT_GUTTER,
+    paddingRight: 2,
   },
   sectionArrow: {
     fontSize: 14,
@@ -1250,21 +1263,27 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     color: "#181a1c",
-    fontWeight:500,
-    marginLeft:4,
+    fontWeight: 500,
   },
   listWrap: {
     width: "100%",
   },
   row: {
     minHeight: 46,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(139, 142, 145, 0.5)",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 2,
+    paddingRight: 2,
+    paddingLeft: LEFT_GUTTER,
     columnGap: 10,
     backgroundColor: "transparent",
+  },
+  rowSeparator: {
+    position: "absolute",
+    top: 0,
+    left: LEFT_GUTTER,
+    right: 0,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "rgba(139, 142, 145, 0.5)",
   },
   swipeDeleteAction: {
     width: 82,
@@ -1272,7 +1291,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(237, 7, 7, 0.88)",
-    marginLeft:6,
+    marginLeft: 6,
   },
   swipeDeleteText: {
     color: "#fff",
@@ -1282,13 +1301,14 @@ const styles = StyleSheet.create({
   },
   rowMarkerImage: {
     position: "absolute",
-    left: -16,
+    left: 1,
     top: 18,
     width: 9,
     height: 9,
   },
   duration: {
-    width: 44,
+    width: "12%",
+    minWidth: 42,
     color: "#8e9092",
     fontSize: 15,
   },
@@ -1301,7 +1321,8 @@ const styles = StyleSheet.create({
     marginTop: LIST_TITLE_NUDGE_Y,
   },
   date: {
-    width: 80,
+    width: "22%",
+    minWidth: 78,
     color: "#8e9092",
     fontSize: 15,
     textAlign: "right",
@@ -1352,7 +1373,8 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   confirmModalCard: {
-    width: 330,
+    width: "90%",
+    maxWidth: 360,
     minHeight: 200,
     borderRadius: 32,
     backgroundColor: "rgb(156, 157, 163)",
@@ -1365,7 +1387,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     letterSpacing: 0.8,
-    marginTop:10,
+    marginTop: 10,
   },
   confirmModalText: {
     marginTop: 18,
@@ -1414,7 +1436,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalCard: {
-    width: 180,
+    width: "52%",
+    maxWidth: 220,
     maxHeight: 260,
     backgroundColor: "#f6f7f8",
     borderRadius: 14,
@@ -1438,4 +1461,3 @@ const styles = StyleSheet.create({
     zIndex: 30,
   },
 });
-

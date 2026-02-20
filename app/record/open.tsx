@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
-  CapsuleRecord,
+  type CapsuleRecord,
   isCapsuleUnlocked,
   loadCapsules,
   updateCapsule,
@@ -124,7 +124,9 @@ export default function CapsuleOpenScreen() {
           </Text>
 
           {!unlocked ? (
-            <Text style={styles.lockedText}>このカプセルはまだ開封できません。</Text>
+            <Text style={styles.lockedText}>
+              このカプセルはまだ開封できません。
+            </Text>
           ) : (
             <>
               <Pressable

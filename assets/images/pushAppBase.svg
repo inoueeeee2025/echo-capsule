@@ -1,0 +1,27 @@
+<svg width="337" height="98" viewBox="0 0 337 98" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g opacity="0.6">
+<g opacity="0.67">
+<mask id="mask0_252_637" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="-50" y="-50" width="470" height="198">
+<rect width="470" height="198" transform="translate(-50 -50)" fill="white"/>
+<rect x="26" y="26" width="318" height="46" rx="23" fill="black"/>
+</mask>
+<g mask="url(#mask0_252_637)">
+<foreignObject x="-14" y="-12" width="398" height="126"><div xmlns="http://www.w3.org/1999/xhtml" style="backdrop-filter:blur(20px);clip-path:url(#bgblur_0_252_637_clip_path);height:100%;width:100%"></div></foreignObject><g filter="url(#filter0_f_252_637)" data-figma-bg-blur-radius="40">
+<path d="M26 51C26 38.2975 36.2975 28 49 28H321C333.703 28 344 38.2975 344 51V51C344 63.7025 333.703 74 321 74H49C36.2974 74 26 63.7025 26 51V51Z" fill="black" fill-opacity="0.1" style="mix-blend-mode:hard-light"/>
+</g>
+</g>
+</g>
+<path d="M26 49C26 36.2975 36.2975 26 49 26H321C333.703 26 344 36.2975 344 49V49C344 61.7025 333.703 72 321 72H49C36.2974 72 26 61.7025 26 49V49Z" fill="#333333" style="mix-blend-mode:color-dodge"/>
+<path d="M26 49C26 36.2975 36.2975 26 49 26H321C333.703 26 344 36.2975 344 49V49C344 61.7025 333.703 72 321 72H49C36.2974 72 26 61.7025 26 49V49Z" fill="white" fill-opacity="0.5"/>
+<path d="M26 49C26 36.2975 36.2975 26 49 26H321C333.703 26 344 36.2975 344 49V49C344 61.7025 333.703 72 321 72H49C36.2974 72 26 61.7025 26 49V49Z" fill="#F7F7F7" style="mix-blend-mode:plus-darker"/>
+<rect x="26" y="26" width="318" height="46" rx="23" fill="black" fill-opacity="0.01"/>
+</g>
+<defs>
+<filter id="filter0_f_252_637" x="-14" y="-12" width="398" height="126" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+<feGaussianBlur stdDeviation="10" result="effect1_foregroundBlur_252_637"/>
+</filter>
+<clipPath id="bgblur_0_252_637_clip_path" transform="translate(14 12)"><path d="M26 51C26 38.2975 36.2975 28 49 28H321C333.703 28 344 38.2975 344 51V51C344 63.7025 333.703 74 321 74H49C36.2974 74 26 63.7025 26 51V51Z"/>
+</clipPath></defs>
+</svg>

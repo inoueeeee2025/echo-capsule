@@ -1,2 +1,5 @@
-import RecordScreen from "./record/rec"; // ¡ì‚Á‚Ä‚é‚â‚Â
-export default function Dev(){ return <RecordScreen /> }
+import RecordScreen from "./record/rec";
+
+export default function Dev() {
+  return <RecordScreen />;
+}

@@ -2,6 +2,7 @@
 import { ZenAntiqueSoft_400Regular } from "@expo-google-fonts/zen-antique-soft";
 import ArchiveContent from "@/components/ArchiveContent";
 import TouchSvg from "@/assets/images/touch.svg";
+import PushAppBaseSvg from "@/assets/images/pushAppBase.svg";
 import {
   addCapsule,
   CapsuleRecord,
@@ -77,6 +78,8 @@ const LETTER_BACKGROUND_IMAGE = require("../../assets/images/letter_background.p
 const RECORDED_DATE_STORAGE_KEY = "recordedDateKey";
 const DISMISSED_NOTICE_IDS_STORAGE_KEY = "dismissedUnlockNoticeIds";
 const TAB_SWIPE_THRESHOLD = 28;
+const PUSH_NOTICE_SLIDE_DURATION_MS = 340;
+const PUSH_NOTICE_VISIBLE_MS = 8000;
 let didDevBootResetRecordedDateKey = false;
 
 function toDateKey(date: Date): string {
@@ -153,6 +156,9 @@ export default function RecordDoneScreen() {
   const unlockOverlayTouchFloatY = useRef(new Animated.Value(0)).current;
   const unlockOverlayLetterPulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const unlockOverlayTouchFloatLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const pushNoticeTranslateX = useRef(new Animated.Value(72)).current;
+  const pushNoticeOpacity = useRef(new Animated.Value(0)).current;
+  const pushNoticeHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const slideX = useRef(new Animated.Value(0)).current;
   const dismissedNoticeIdsRef = useRef<Set<string>>(new Set());
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -668,14 +674,17 @@ export default function RecordDoneScreen() {
         ? "本日の録音は完了しています。\n1年後のあなたは、どんな場所にいるかな？"
         : "長押しして録音しましょう";
   const isArchiveTab = activeTab === "archive";
-  const showUnlockNoticeOverlay =
+  const isRecIdleNoticeSurface =
     activeTab === "rec" &&
     flow === FLOW.RECORD &&
     !isRecordPressing &&
     !isRecording &&
     !isProjectModalVisible &&
-    !isSaveComplete &&
-    (!!unlockNoticeCapsule || isDevUnlockPreviewVisible);
+    !isSaveComplete;
+  const showUnlockNoticeOverlay =
+    isRecIdleNoticeSurface && (!!unlockNoticeCapsule || isDevUnlockPreviewVisible);
+  const showPushNotice =
+    !isRecIdleNoticeSurface && !!unlockNoticeCapsule && !isDevUnlockPreviewVisible;
   const unlockNoticeMessageDate = useMemo(() => {
     const sourceMs = unlockNoticeCapsule?.unlockAtMs ?? Date.now();
     const d = new Date(sourceMs);
@@ -695,6 +704,62 @@ export default function RecordDoneScreen() {
       window.removeEventListener("keydown", onKeyDown);
     };
   }, []);
+
+  useEffect(() => {
+    const clearPushNoticeTimer = () => {
+      if (!pushNoticeHideTimerRef.current) return;
+      clearTimeout(pushNoticeHideTimerRef.current);
+      pushNoticeHideTimerRef.current = null;
+    };
+
+    if (!showPushNotice) {
+      clearPushNoticeTimer();
+      pushNoticeTranslateX.stopAnimation();
+      pushNoticeOpacity.stopAnimation();
+      pushNoticeTranslateX.setValue(72);
+      pushNoticeOpacity.setValue(0);
+      return;
+    }
+
+    pushNoticeTranslateX.setValue(72);
+    pushNoticeOpacity.setValue(0);
+    Animated.parallel([
+      Animated.timing(pushNoticeTranslateX, {
+        toValue: 0,
+        duration: PUSH_NOTICE_SLIDE_DURATION_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(pushNoticeOpacity, {
+        toValue: 1,
+        duration: 260,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    clearPushNoticeTimer();
+    pushNoticeHideTimerRef.current = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(pushNoticeTranslateX, {
+          toValue: 72,
+          duration: PUSH_NOTICE_SLIDE_DURATION_MS,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pushNoticeOpacity, {
+          toValue: 0,
+          duration: PUSH_NOTICE_SLIDE_DURATION_MS,
+          easing: Easing.in(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }, PUSH_NOTICE_VISIBLE_MS);
+
+    return () => {
+      clearPushNoticeTimer();
+    };
+  }, [pushNoticeOpacity, pushNoticeTranslateX, showPushNotice]);
 
   useEffect(() => {
     const stopFloating = () => {
@@ -854,21 +919,16 @@ export default function RecordDoneScreen() {
     const next =
       unlockedPending.find((item) => !dismissedNoticeIdsRef.current.has(item.id)) ?? null;
     setUnlockNoticeCapsule(next);
-    if (next && activeTab !== "rec" && flow === FLOW.RECORD) {
-      setActiveTab("rec");
-    }
-  }, [activeTab, flow, isDismissedNoticeIdsReady, unlockNoticeCapsule]);
+  }, [isDismissedNoticeIdsReady, unlockNoticeCapsule]);
 
   const closeUnlockNotice = useCallback(async () => {
     if (isDevUnlockPreviewVisible) {
-      setActiveTab("rec");
       setIsDevUnlockPreviewVisible(false);
       return;
     }
     if (!unlockNoticeCapsule) return;
     dismissedNoticeIdsRef.current.add(unlockNoticeCapsule.id);
     await persistDismissedNoticeIds();
-    setActiveTab("rec");
     setUnlockNoticeCapsule(null);
   }, [isDevUnlockPreviewVisible, persistDismissedNoticeIds, unlockNoticeCapsule]);
 
@@ -1018,6 +1078,37 @@ export default function RecordDoneScreen() {
             }
             style={styles.screenContent}
           >
+            {showPushNotice ? (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.pushNoticeWrap,
+                  {
+                    opacity: pushNoticeOpacity,
+                    transform: [{ translateX: pushNoticeTranslateX }],
+                  },
+                ]}
+              >
+                <View style={styles.pushNoticeInner}>
+                  <PushAppBaseSvg width={270} height={82} />
+                  <View style={styles.pushNoticeContent}>
+                    <Image
+                      source={require("../../assets/images/key.png")}
+                      style={styles.pushNoticeKeyImage}
+                      resizeMode="contain"
+                    />
+                    <Text
+                      style={[
+                        styles.pushNoticeText,
+                        zenAntiqueSoftLoaded && styles.saveCompleteZenFont,
+                      ]}
+                    >
+                      一年前の音声が届いています
+                    </Text>
+                  </View>
+                </View>
+              </Animated.View>
+            ) : null}
             <View style={styles.topArea}>
               {flow === FLOW.REVIEW && activeTab === "rec" ? (
                 <View style={styles.retakeTopRow}>
@@ -1480,6 +1571,39 @@ const styles = StyleSheet.create({
     flex: 1,
     width: "100%",
     alignItems: "center",
+  },
+  pushNoticeWrap: {
+    position: "absolute",
+    top: -10,
+    right: -10,
+    zIndex: 18,
+    elevation: 18,
+  },
+  pushNoticeInner: {
+    width: 244,
+    height: 82,
+    justifyContent: "center",
+  },
+  pushNoticeContent: {
+    position: "absolute",
+    left: 34,
+    right: 14,
+    top:10,
+    bottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  pushNoticeKeyImage: {
+    width: 20,
+    height: 20,
+    marginRight: 8,
+    marginTop: -1,
+  },
+  pushNoticeText: {
+    color: "#121216",
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 0.2,
   },
   topArea: { width: "100%", alignItems: "center", paddingTop: 26 },
   slideViewport: {
