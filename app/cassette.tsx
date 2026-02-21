@@ -1,4 +1,4 @@
-﻿import { loadCapsules } from "@/src/capsules/storage";
+import { loadCapsules } from "@/src/capsules/storage";
 import {
   createAudioPlayer,
   setIsAudioActiveAsync,
@@ -591,3 +591,5 @@ const styles = StyleSheet.create({
     fontWeight: "400",
   },
 });
+
+

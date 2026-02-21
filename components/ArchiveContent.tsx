@@ -320,7 +320,7 @@ export default function ArchiveContent({
       date: toDateKeyFromMs(item.unlockAtMs),
       hasTranscript: item.hasTranscript,
       isLocked: false,
-      isUnopened: item.openedAtMs == null,
+      isUnopened: item.openedAtMs === null,
       source: "capsule",
       unlockAtMs: item.unlockAtMs,
       openedAtMs: item.openedAtMs,
@@ -368,7 +368,7 @@ export default function ArchiveContent({
       return {
         ...item,
         isLocked: nowMs < item.unlockAtMs,
-        isUnopened: item.openedAtMs == null,
+        isUnopened: item.openedAtMs === null,
       };
     });
   }, [capsuleItems, nowMs]);
