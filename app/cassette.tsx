@@ -1,4 +1,5 @@
 ﻿import { loadCapsules } from "@/src/capsules/storage";
+import { hardwareWS, type HardwareState } from "@/src/hardware/ws";
 import {
   createAudioPlayer,
   setIsAudioActiveAsync,
@@ -13,9 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
   Animated,
-  DeviceEventEmitter,
   Easing,
-  type EmitterSubscription,
   Image,
   ImageBackground,
   Pressable,
@@ -93,6 +92,11 @@ export default function CassetteScreen() {
   const loopRef = useRef<Animated.CompositeAnimation | null>(null);
   const playerRef = useRef<AudioPlayer | null>(null);
   const playbackSubscriptionRef = useRef<{ remove: () => void } | null>(null);
+  const prevHardwareStateRef = useRef<HardwareState>({
+    stop: false,
+    play: false,
+    rec: false,
+  });
   const hasAppliedRequestedCapsuleRef = useRef(false);
   const requestedCapsuleId =
     typeof params.capsuleId === "string" ? params.capsuleId : "";
@@ -256,17 +260,23 @@ export default function CassetteScreen() {
   }, []);
 
   useEffect(() => {
-    const subs: EmitterSubscription[] = [
-      DeviceEventEmitter.addListener("hardware-play", () => {
+    hardwareWS.connect();
+    const unsub = hardwareWS.subscribe((s) => {
+      const prev = prevHardwareStateRef.current;
+      const playDown = s.play && !prev.play;
+      const playUp = !s.play && prev.play;
+      const stopDown = s.stop && !prev.stop;
+
+      if (playDown) {
         handleHardwarePlaybackChange(true);
-      }),
-      DeviceEventEmitter.addListener("hardware-stop", () => {
+      }
+      if (playUp || stopDown) {
         handleHardwarePlaybackChange(false);
-      }),
-    ];
-    return () => {
-      subs.forEach((sub) => sub.remove());
-    };
+      }
+
+      prevHardwareStateRef.current = s;
+    });
+    return unsub;
   }, [handleHardwarePlaybackChange]);
 
   useEffect(() => {
@@ -693,5 +703,4 @@ const styles = StyleSheet.create({
     fontWeight: "400",
   },
 });
-
 

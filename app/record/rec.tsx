@@ -47,6 +47,7 @@ import {
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { hardwareWS, type HardwareState } from "@/src/hardware/ws";
 
 const STATUS = {
   IDLE: "idle",
@@ -185,6 +186,11 @@ export default function RecordDoneScreen() {
   const playbackSubscriptionRef = useRef<{ remove: () => void } | null>(null);
   const autoStoppingRef = useRef(false);
   const isSlidingRef = useRef(false);
+  const prevHardwareStateRef = useRef<HardwareState>({
+    stop: false,
+    play: false,
+    rec: false,
+  });
 
   const recordStatusRef = useRef(recordStatus);
   useEffect(() => {
@@ -326,7 +332,7 @@ export default function RecordDoneScreen() {
     }
   }, []);
 
-  const startRecording = async () => {
+  const startRecording = useCallback(async () => {
     if (recordStatusRef.current === STATUS.RECORDING || flow !== FLOW.RECORD) {
       setIsRecordPressing(false);
       return;
@@ -357,7 +363,7 @@ export default function RecordDoneScreen() {
     setElapsedMs(0);
     setRecordStatus(STATUS.RECORDING);
     recordStatusRef.current = STATUS.RECORDING;
-  };
+  }, [flow, recorder, unloadSound]);
 
   const handleRecordPressOut = () => {
     setIsRecordPressing(false);
@@ -373,6 +379,62 @@ export default function RecordDoneScreen() {
       }
     })();
   };
+
+  useEffect(() => {
+    hardwareWS.connect();
+
+    const unsub = hardwareWS.subscribe((s) => {
+      const prev = prevHardwareStateRef.current;
+      const recDown = s.rec && !prev.rec;
+      const recUp = !s.rec && prev.rec;
+      const stopDown = s.stop && !prev.stop;
+
+      if (recDown) {
+        if (isLockedToday) {
+          prevHardwareStateRef.current = s;
+          return;
+        }
+        setIsRecordPressing(true);
+        void startRecording();
+      }
+      if (recUp) {
+        setIsRecordPressing(false);
+        if (recordStatusRef.current !== STATUS.RECORDING) {
+          prevHardwareStateRef.current = s;
+          return;
+        }
+        void (async () => {
+          const result = await stopRecording();
+          if (result) {
+            setFlow(FLOW.REVIEW);
+            return;
+          }
+          setRecordStatus(STATUS.IDLE);
+          recordStatusRef.current = STATUS.IDLE;
+        })();
+      }
+      if (stopDown) {
+        setIsRecordPressing(false);
+        if (recordStatusRef.current !== STATUS.RECORDING) {
+          prevHardwareStateRef.current = s;
+          return;
+        }
+        void (async () => {
+          const result = await stopRecording();
+          if (result) {
+            setFlow(FLOW.REVIEW);
+            return;
+          }
+          setRecordStatus(STATUS.IDLE);
+          recordStatusRef.current = STATUS.IDLE;
+        })();
+      }
+
+      prevHardwareStateRef.current = s;
+    });
+
+    return unsub;
+  }, [isLockedToday, startRecording, stopRecording]);
 
   const onSlidingStart = useCallback(() => {
     setIsSliding(true);
