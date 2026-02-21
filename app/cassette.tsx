@@ -10,6 +10,7 @@ import { BlurView } from "expo-blur";
 import { useFonts } from "expo-font";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
   Animated,
   DeviceEventEmitter,
@@ -42,7 +43,18 @@ const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const ARRIVAL_INTRO_SLIDE_MS = 420;
 const ARRIVAL_INTRO_HOLD_MS = 900;
 const ARRIVAL_INTRO_FADE_OUT_MS = 420;
+const ARRIVAL_INTRO_SLIDE_DISTANCE_RATIO = 0.36;
 const FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD = __DEV__;
+const PROJECT_SWIPE_THRESHOLD = 28;
+const PROJECT_SLIDE_TRANSITION_MS = 180;
+const AnimatedImageBackground = Animated.createAnimatedComponent(ImageBackground);
+
+type PlayableCapsule = {
+  id: string;
+  audioUri: string;
+  title: string;
+  recordedAtMs: number | null;
+};
 
 function formatRecordedDate(ms: number | null): string {
   if (typeof ms !== "number" || !Number.isFinite(ms)) return "";
@@ -56,31 +68,35 @@ export default function CassetteScreen() {
   });
   const router = useRouter();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isLandscapeViewport = windowWidth > windowHeight;
   const params = useLocalSearchParams<{
     capsuleId?: string;
     showArrivalIntro?: string;
   }>();
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playableCapsules, setPlayableCapsules] = useState<PlayableCapsule[]>(
+    [],
+  );
+  const [activeCapsuleIndex, setActiveCapsuleIndex] = useState(0);
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [activeCapsuleId, setActiveCapsuleId] = useState<string>("");
   const [activeCapsuleTitle, setActiveCapsuleTitle] = useState("");
   const [activeCapsuleRecordedAtMs, setActiveCapsuleRecordedAtMs] = useState<number | null>(null);
   const [isArrivalIntroVisible, setIsArrivalIntroVisible] = useState(false);
   const rotateProgress = useRef(new Animated.Value(0)).current;
+  const pageSlideX = useRef(new Animated.Value(0)).current;
   const arrivalIntroTranslateX = useRef(new Animated.Value(0)).current;
   const arrivalIntroOpacity = useRef(new Animated.Value(0)).current;
-  const arrivalIntroPlayedRef = useRef(false);
+  const isProjectSlideTransitioningRef = useRef(false);
+  const pendingPageInAfterIntroRef = useRef(false);
   const progressRef = useRef(0);
   const loopRef = useRef<Animated.CompositeAnimation | null>(null);
   const playerRef = useRef<AudioPlayer | null>(null);
   const playbackSubscriptionRef = useRef<{ remove: () => void } | null>(null);
+  const hasAppliedRequestedCapsuleRef = useRef(false);
   const requestedCapsuleId =
     typeof params.capsuleId === "string" ? params.capsuleId : "";
-  const shouldPlayArrivalIntro =
-    params.showArrivalIntro === "1" ||
-    params.showArrivalIntro === "true" ||
-    requestedCapsuleId.length > 0 ||
-    FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD;
+  const shouldPlayArrivalIntro = true;
 
   const uiScale = useMemo(() => {
     const byWidth = windowWidth / DESIGN_WIDTH;
@@ -126,20 +142,106 @@ export default function CassetteScreen() {
       .sort((a, b) => b.unlockAtMs - a.unlockAtMs);
 
     if (unlocked.length === 0) {
+      setPlayableCapsules([]);
+      setActiveCapsuleIndex(0);
       setAudioUri(null);
       setActiveCapsuleId("");
+      setActiveCapsuleTitle("");
+      setActiveCapsuleRecordedAtMs(null);
       return;
     }
 
-    const byParam = requestedCapsuleId
-      ? unlocked.find((item) => item.id === requestedCapsuleId) ?? null
-      : null;
-    const target = byParam ?? unlocked[0];
+    const nextCapsules: PlayableCapsule[] = unlocked.map((item) => ({
+      id: item.id,
+      audioUri: item.audioUri,
+      title: item.title,
+      recordedAtMs: item.recordedAtMs ?? null,
+    }));
+    setPlayableCapsules(nextCapsules);
+
+    let requestedIndex = -1;
+    if (
+      requestedCapsuleId.length > 0 &&
+      !hasAppliedRequestedCapsuleRef.current
+    ) {
+      requestedIndex = nextCapsules.findIndex(
+        (item) => item.id === requestedCapsuleId,
+      );
+      if (requestedIndex >= 0) {
+        hasAppliedRequestedCapsuleRef.current = true;
+      }
+    }
+    setActiveCapsuleIndex((prev) => {
+      if (requestedIndex >= 0) return requestedIndex;
+      return Math.min(prev, nextCapsules.length - 1);
+    });
+  }, [requestedCapsuleId]);
+
+  useEffect(() => {
+    if (playableCapsules.length === 0) return;
+    const safeIndex = Math.min(
+      Math.max(0, activeCapsuleIndex),
+      playableCapsules.length - 1,
+    );
+    const target = playableCapsules[safeIndex];
     setAudioUri(target.audioUri);
     setActiveCapsuleId(target.id);
     setActiveCapsuleTitle(target.title);
     setActiveCapsuleRecordedAtMs(target.recordedAtMs);
-  }, [requestedCapsuleId]);
+  }, [activeCapsuleIndex, playableCapsules]);
+
+  const moveActiveCapsuleBy = useCallback(
+    (delta: number) => {
+      if (!isLandscapeViewport) return;
+      if (playableCapsules.length <= 1) return;
+      if (isProjectSlideTransitioningRef.current) return;
+      const next = activeCapsuleIndex + delta;
+      if (next < 0 || next > playableCapsules.length - 1) return;
+
+      isProjectSlideTransitioningRef.current = true;
+      const outTo = delta > 0 ? -windowWidth : windowWidth;
+      const inFrom = -outTo;
+      pageSlideX.stopAnimation();
+      Animated.timing(pageSlideX, {
+        toValue: outTo,
+        duration: PROJECT_SLIDE_TRANSITION_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start(() => {
+        pendingPageInAfterIntroRef.current = true;
+        pageSlideX.setValue(inFrom);
+        setActiveCapsuleIndex(next);
+      });
+    },
+    [activeCapsuleIndex, isLandscapeViewport, pageSlideX, playableCapsules.length, windowWidth],
+  );
+
+  const projectSwipeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .runOnJS(true)
+        .activeOffsetX([-18, 18])
+        .failOffsetY([-24, 24])
+        .minDistance(18)
+      .onEnd((gesture) => {
+          if (isProjectSlideTransitioningRef.current) return;
+          const isLeftSwipe =
+            gesture.translationX <= -PROJECT_SWIPE_THRESHOLD ||
+            (gesture.velocityX < -220 && gesture.translationX < -8);
+          const isRightSwipe =
+            gesture.translationX >= PROJECT_SWIPE_THRESHOLD ||
+            (gesture.velocityX > 220 && gesture.translationX > 8);
+
+          if (isLeftSwipe) {
+            moveActiveCapsuleBy(1);
+            return;
+          }
+          if (isRightSwipe) {
+            moveActiveCapsuleBy(-1);
+          }
+        }),
+    [moveActiveCapsuleBy],
+  );
 
   const handleHardwarePlaybackChange = useCallback((next: boolean) => {
     const player = playerRef.current;
@@ -259,21 +361,20 @@ export default function CassetteScreen() {
 
   useEffect(() => {
     if (!shouldPlayArrivalIntro) return;
-    if (arrivalIntroPlayedRef.current) return;
+    if (!activeCapsuleId && !FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD) return;
     if (!activeCapsuleTitle && !FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD) return;
-
-    arrivalIntroPlayedRef.current = true;
     setIsArrivalIntroVisible(true);
     arrivalIntroTranslateX.stopAnimation();
     arrivalIntroOpacity.stopAnimation();
-    arrivalIntroTranslateX.setValue(0);
+    const slideDistance = Math.max(140, windowWidth * ARRIVAL_INTRO_SLIDE_DISTANCE_RATIO);
+    arrivalIntroTranslateX.setValue(slideDistance);
     arrivalIntroOpacity.setValue(0);
 
     Animated.sequence([
       Animated.parallel([
         Animated.timing(arrivalIntroTranslateX, {
           toValue: 0,
-          duration: 0,
+          duration: ARRIVAL_INTRO_SLIDE_MS,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
@@ -287,7 +388,7 @@ export default function CassetteScreen() {
       Animated.delay(ARRIVAL_INTRO_HOLD_MS),
       Animated.parallel([
         Animated.timing(arrivalIntroTranslateX, {
-          toValue: 0,
+          toValue: -slideDistance,
           duration: ARRIVAL_INTRO_FADE_OUT_MS,
           easing: Easing.in(Easing.cubic),
           useNativeDriver: true,
@@ -301,11 +402,23 @@ export default function CassetteScreen() {
       ]),
     ]).start(() => {
       setIsArrivalIntroVisible(false);
+      if (!pendingPageInAfterIntroRef.current) return;
+      pendingPageInAfterIntroRef.current = false;
+      Animated.timing(pageSlideX, {
+        toValue: 0,
+        duration: PROJECT_SLIDE_TRANSITION_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start(() => {
+        isProjectSlideTransitioningRef.current = false;
+      });
     });
   }, [
+    activeCapsuleId,
     activeCapsuleTitle,
     arrivalIntroOpacity,
     arrivalIntroTranslateX,
+    pageSlideX,
     shouldPlayArrivalIntro,
     windowWidth,
   ]);
@@ -322,12 +435,13 @@ export default function CassetteScreen() {
   const showArrivalIntro = isArrivalIntroVisible;
 
   return (
-    <ImageBackground
+    <AnimatedImageBackground
       source={require("../assets/images/cassette_background.png")}
       resizeMode="cover"
-      style={styles.background}
+      style={[styles.background, { transform: [{ translateX: pageSlideX }] }]}
     >
-      <SafeAreaView style={styles.safeArea}>
+      <GestureDetector gesture={projectSwipeGesture}>
+        <SafeAreaView style={styles.safeArea}>
         <View style={[styles.cassetteArea, styles.cassetteAreaLandscape]}>
           <View
             style={[
@@ -451,7 +565,10 @@ export default function CassetteScreen() {
                 opacity: arrivalIntroOpacity,
                 transform: [
                   {
-                    translateX: arrivalIntroTranslateX,
+                    translateX: Animated.add(
+                      arrivalIntroTranslateX,
+                      Animated.multiply(pageSlideX, -1),
+                    ),
                   },
                 ],
               },
@@ -472,8 +589,9 @@ export default function CassetteScreen() {
             </Text>
           </Animated.View>
         ) : null}
-      </SafeAreaView>
-    </ImageBackground>
+        </SafeAreaView>
+      </GestureDetector>
+    </AnimatedImageBackground>
   );
 }
 
