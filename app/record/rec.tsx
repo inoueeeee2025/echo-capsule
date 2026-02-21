@@ -1,4 +1,4 @@
-import PushAppBaseSvg from "@/assets/images/pushAppBase.svg";
+﻿import PushAppBaseSvg from "@/assets/images/pushAppBase.svg";
 import TouchSvg from "@/assets/images/touch.svg";
 import ArchiveContent from "@/components/ArchiveContent";
 import RecordToolbar from "@/components/RecordToolbar";
@@ -13,6 +13,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Slider from "@react-native-community/slider";
 import { useFocusEffect } from "@react-navigation/native";
 import { BlurView } from "expo-blur";
+import { Asset } from "expo-asset";
 import {
   createAudioPlayer,
   RecordingPresets,
@@ -81,6 +82,8 @@ const DISMISSED_NOTICE_IDS_STORAGE_KEY = "dismissedUnlockNoticeIds";
 const TAB_SWIPE_THRESHOLD = 28;
 const PUSH_NOTICE_SLIDE_DURATION_MS = 340;
 const PUSH_NOTICE_VISIBLE_MS = 8000;
+const PUSH_NOTICE_SOUND_CLEANUP_MS = 1200;
+const PUSH_NOTICE_SOUND_FILE = require("../../assets/soun/決定ボタンを押す40.mp3");
 let didDevBootResetRecordedDateKey = false;
 
 function toDateKey(date: Date): string {
@@ -167,6 +170,10 @@ export default function RecordDoneScreen() {
   const pushNoticeHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const pushNoticeSoundRef = useRef<AudioPlayer | null>(null);
+  const pushNoticeSoundCleanupTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const slideX = useRef(new Animated.Value(0)).current;
   const dismissedNoticeIdsRef = useRef<Set<string>>(new Set());
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -217,6 +224,46 @@ export default function RecordDoneScreen() {
     setDurationMillis(0);
     setSliderMillis(0);
   }, []);
+
+  const stopPushNoticeSound = useCallback(() => {
+    if (pushNoticeSoundCleanupTimerRef.current) {
+      clearTimeout(pushNoticeSoundCleanupTimerRef.current);
+      pushNoticeSoundCleanupTimerRef.current = null;
+    }
+    const player = pushNoticeSoundRef.current;
+    pushNoticeSoundRef.current = null;
+    if (!player) return;
+    try {
+      player.pause();
+    } catch {}
+    try {
+      player.remove();
+    } catch {}
+  }, []);
+
+  const playPushNoticeSound = useCallback(async () => {
+    stopPushNoticeSound();
+    try {
+      const soundAsset = Asset.fromModule(PUSH_NOTICE_SOUND_FILE);
+      if (!soundAsset.localUri) {
+        try {
+          await soundAsset.downloadAsync();
+        } catch {}
+      }
+      const uri = soundAsset.localUri ?? soundAsset.uri;
+      if (!uri) return;
+      const player = createAudioPlayer({ uri });
+      pushNoticeSoundRef.current = player;
+      player.play();
+      pushNoticeSoundCleanupTimerRef.current = setTimeout(() => {
+        if (pushNoticeSoundRef.current !== player) return;
+        pushNoticeSoundRef.current = null;
+        try {
+          player.remove();
+        } catch {}
+      }, PUSH_NOTICE_SOUND_CLEANUP_MS);
+    } catch {}
+  }, [stopPushNoticeSound]);
 
   const onPlaybackStatusUpdate = useCallback((status: AudioStatus) => {
     if (!status.isLoaded) {
@@ -646,8 +693,9 @@ export default function RecordDoneScreen() {
         recording.stop().catch(() => {});
       }
       unloadSound().catch(() => {});
+      stopPushNoticeSound();
     };
-  }, [unloadSound]);
+  }, [stopPushNoticeSound, unloadSound]);
 
   const currentSliderValue = isSliding ? sliderMillis : positionMillis;
   const isRecordVisualActive =
@@ -725,6 +773,7 @@ export default function RecordDoneScreen() {
 
     if (!showPushNotice) {
       clearPushNoticeTimer();
+      stopPushNoticeSound();
       pushNoticeTranslateX.stopAnimation();
       pushNoticeOpacity.stopAnimation();
       pushNoticeTranslateX.setValue(72);
@@ -732,6 +781,7 @@ export default function RecordDoneScreen() {
       return;
     }
 
+    void playPushNoticeSound();
     pushNoticeTranslateX.setValue(72);
     pushNoticeOpacity.setValue(0);
     Animated.parallel([
@@ -770,7 +820,13 @@ export default function RecordDoneScreen() {
     return () => {
       clearPushNoticeTimer();
     };
-  }, [pushNoticeOpacity, pushNoticeTranslateX, showPushNotice]);
+  }, [
+    playPushNoticeSound,
+    pushNoticeOpacity,
+    pushNoticeTranslateX,
+    showPushNotice,
+    stopPushNoticeSound,
+  ]);
 
   useEffect(() => {
     const stopFloating = () => {
@@ -2075,3 +2131,4 @@ const styles = StyleSheet.create({
     height: 98,
   },
 });
+
