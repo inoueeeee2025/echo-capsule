@@ -1084,6 +1084,14 @@ export default function RecordDoneScreen() {
     await persistDismissedNoticeIds();
     setUnlockNoticeCapsule(null);
     void refreshUnlockNotice();
+    const shouldOpenCassetteFirst = await hardwareWS.waitUntilConnected();
+    if (shouldOpenCassetteFirst) {
+      router.push({
+        pathname: "/cassette",
+        params: { capsuleId, showArrivalIntro: "1" },
+      });
+      return;
+    }
     router.push({
       pathname: "/record/kaihuu",
       params: { capsuleId, fromUnlockNotice: "1" },

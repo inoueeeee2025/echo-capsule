@@ -92,6 +92,7 @@ export default function CassetteScreen() {
   const loopRef = useRef<Animated.CompositeAnimation | null>(null);
   const playerRef = useRef<AudioPlayer | null>(null);
   const playbackSubscriptionRef = useRef<{ remove: () => void } | null>(null);
+  const shouldPlayFromHardwareRef = useRef(false);
   const prevHardwareStateRef = useRef<HardwareState>({
     stop: false,
     play: false,
@@ -248,13 +249,19 @@ export default function CassetteScreen() {
   );
 
   const handleHardwarePlaybackChange = useCallback((next: boolean) => {
+    shouldPlayFromHardwareRef.current = next;
     const player = playerRef.current;
-    if (!player) return;
+    if (!player) {
+      setIsPlaying(next);
+      return;
+    }
     try {
       if (next) {
         player.play();
+        setIsPlaying(true);
       } else {
         player.pause();
+        setIsPlaying(false);
       }
     } catch {}
   }, []);
@@ -312,6 +319,12 @@ export default function CassetteScreen() {
         playerRef.current = player;
         playbackSubscriptionRef.current = sub;
         onPlaybackStatusUpdate(player.currentStatus);
+        if (shouldPlayFromHardwareRef.current) {
+          try {
+            player.play();
+            setIsPlaying(true);
+          } catch {}
+        }
       } catch {
         setIsPlaying(false);
       }
