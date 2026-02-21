@@ -1923,7 +1923,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(209, 209, 209, 0.32)",
   },
   dimLayerForSaveComplete: {
-    backgroundColor: "rgba(232, 232, 232, 0.46)",
+    backgroundColor: "rgba(232, 232, 232, 0.68)",
   },
   saveCompleteBlurLayer: {
     position: "absolute",

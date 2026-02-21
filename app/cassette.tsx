@@ -1,4 +1,4 @@
-import { loadCapsules } from "@/src/capsules/storage";
+﻿import { loadCapsules } from "@/src/capsules/storage";
 import {
   createAudioPlayer,
   setIsAudioActiveAsync,
@@ -77,7 +77,10 @@ export default function CassetteScreen() {
   const requestedCapsuleId =
     typeof params.capsuleId === "string" ? params.capsuleId : "";
   const shouldPlayArrivalIntro =
-    params.showArrivalIntro === "1" || FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD;
+    params.showArrivalIntro === "1" ||
+    params.showArrivalIntro === "true" ||
+    requestedCapsuleId.length > 0 ||
+    FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD;
 
   const uiScale = useMemo(() => {
     const byWidth = windowWidth / DESIGN_WIDTH;
@@ -439,12 +442,6 @@ export default function CassetteScreen() {
           disabled={!canPlay}
           hitSlop={16}
         />
-
-        {!canPlay ? (
-          <View style={[styles.unavailableWrap, { bottom: 110 * uiScale }]}>
-            <Text style={styles.unavailableText}>再生できる音声がありません</Text>
-          </View>
-        ) : null}
         {showArrivalIntro ? (
           <Animated.View
             pointerEvents="none"
@@ -545,19 +542,6 @@ const styles = StyleSheet.create({
     height: 1,
     opacity: 0,
     zIndex: 99,
-  },
-  unavailableWrap: {
-    position: "absolute",
-    alignSelf: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: "rgba(10, 10, 12, 0.46)",
-  },
-  unavailableText: {
-    color: "#f3f3f5",
-    fontSize: 12,
-    letterSpacing: 0.2,
   },
   arrivalIntroOverlay: {
     position: "absolute",
