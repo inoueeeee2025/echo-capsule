@@ -28,10 +28,6 @@ export default function RootLayout() {
             options={{ orientation: "portrait", animation: "slide_from_right" }}
           />
           <Stack.Screen
-            name="record/open"
-            options={{ orientation: "portrait", animation: "slide_from_right" }}
-          />
-          <Stack.Screen
             name="cassette"
             options={{ orientation: "landscape", animation: "none" }}
           />
