@@ -1,4 +1,4 @@
-import ArchiveContent from "@/components/ArchiveContent";
+﻿import ArchiveContent from "@/components/ArchiveContent";
 import RecordToolbar from "@/components/RecordToolbar";
 import { loadCapsules, saveCapsules } from "@/src/capsules/storage";
 import { useFocusEffect } from "@react-navigation/native";
@@ -38,6 +38,7 @@ const TRANSPARENT_THUMB = {
 const MOCK_DURATION_MS = 60000;
 const INITIAL_SLIDE_WIDTH = 360;
 const NOREC_BUTTON_NUDGE_Y = -20;
+const REC_BUTTON_ALIGN_OFFSET_Y = -5;
 const RECORDED_DATE_STORAGE_KEY = "recordedDateKey";
 const TEXT_BOARD_IMAGE = require("../../assets/images/textBoard.png");
 const TAB_SWIPE_THRESHOLD = 28;
@@ -370,7 +371,7 @@ export default function KaihuuScreen() {
     : "録音ボタンを押して録音しましょう";
 
   const transcriptLine1 = "こんにちはー";
-  const transcriptLine2 = "お元気ですか？";
+  const transcriptLine2 = "おはようございますー";
   const ydwStyle = ydwLoaded ? styles.ydwBananaslipPlus : undefined;
 
   const switchToRecTab = useCallback(() => {
@@ -619,7 +620,10 @@ export default function KaihuuScreen() {
                     </Text>
                     <View style={styles.centerArea}>
                       <Pressable
-                        style={styles.recButton}
+                        style={[
+                          styles.recButton,
+                          { transform: [{ translateY: REC_BUTTON_ALIGN_OFFSET_Y }] },
+                        ]}
                         disabled={isLockedToday}
                       >
                         <Image
