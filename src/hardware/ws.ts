@@ -1,17 +1,30 @@
 export type HardwareState = { stop: boolean; play: boolean; rec: boolean };
 type Listener = (s: HardwareState) => void;
+type ConnectionListener = (connected: boolean) => void;
 
 class EchoCapsuleWS {
   private ws: WebSocket | null = null;
   private listeners = new Set<Listener>();
+  private connectionListeners = new Set<ConnectionListener>();
+  private connected = false;
+
+  private emitConnection(connected: boolean) {
+    this.connectionListeners.forEach((listener) => listener(connected));
+  }
 
   connect() {
     if (this.ws) return;
 
     this.ws = new WebSocket("ws://192.168.46.1/ws");
 
-    this.ws.onopen = () => console.log("[HW] ws open");
+    this.ws.onopen = () => {
+      this.connected = true;
+      this.emitConnection(true);
+      console.log("[HW] ws open");
+    };
     this.ws.onclose = () => {
+      this.connected = false;
+      this.emitConnection(false);
       console.log("[HW] ws close");
       this.ws = null;
     };
@@ -32,6 +45,44 @@ class EchoCapsuleWS {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  subscribeConnection(listener: ConnectionListener) {
+    this.connectionListeners.add(listener);
+    return () => {
+      this.connectionListeners.delete(listener);
+    };
+  }
+
+  isConnected() {
+    return this.connected;
+  }
+
+  async waitUntilConnected(timeoutMs = 450) {
+    if (this.connected) return true;
+    this.connect();
+
+    return await new Promise<boolean>((resolve) => {
+      let done = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let unsubscribe: (() => void) | null = null;
+
+      const finish = (value: boolean) => {
+        if (done) return;
+        done = true;
+        if (timer) clearTimeout(timer);
+        unsubscribe?.();
+        resolve(value);
+      };
+
+      unsubscribe = this.subscribeConnection((connected) => {
+        if (connected) finish(true);
+      });
+
+      timer = setTimeout(() => {
+        finish(this.connected);
+      }, timeoutMs);
+    });
   }
 }
 
