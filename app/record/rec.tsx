@@ -1,4 +1,6 @@
 ﻿import PushAppBaseSvg from "@/assets/images/pushAppBase.svg";
+import CassetteButtonSvg from "@/assets/images/cassetteButton.svg";
+import SmartphoneBackSvg from "@/assets/images/smartphoneBack.svg";
 import TouchSvg from "@/assets/images/touch.svg";
 import ArchiveContent from "@/components/ArchiveContent";
 import RecordToolbar from "@/components/RecordToolbar";
@@ -36,9 +38,11 @@ import {
   Image,
   ImageBackground,
   Keyboard,
+  Linking,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -83,6 +87,8 @@ const TAB_SWIPE_THRESHOLD = 28;
 const PUSH_NOTICE_SLIDE_DURATION_MS = 340;
 const PUSH_NOTICE_VISIBLE_MS = 8000;
 const PUSH_NOTICE_SOUND_CLEANUP_MS = 1200;
+const CASSETTE_FLIP_OUT_DURATION_MS = 190;
+const CASSETTE_FLIP_IN_DURATION_MS = 230;
 const PUSH_NOTICE_SOUND_FILE = require("../../assets/soun/決定ボタンを押す40.mp3");
 let didDevBootResetRecordedDateKey = false;
 
@@ -152,6 +158,9 @@ export default function RecordDoneScreen() {
   const [slideWidth, setSlideWidth] = useState(SCREEN_WIDTH);
   const [isDismissedNoticeIdsReady, setIsDismissedNoticeIdsReady] =
     useState(false);
+  const [isCassetteConnectPromptVisible, setIsCassetteConnectPromptVisible] =
+    useState(false);
+  const [isCassetteFlipAnimating, setIsCassetteFlipAnimating] = useState(false);
 
   const pulse = useRef(new Animated.Value(1)).current;
   const saveReveal = useRef(new Animated.Value(0)).current;
@@ -167,6 +176,7 @@ export default function RecordDoneScreen() {
     useRef<Animated.CompositeAnimation | null>(null);
   const pushNoticeTranslateX = useRef(new Animated.Value(72)).current;
   const pushNoticeOpacity = useRef(new Animated.Value(0)).current;
+  const cassetteFlip = useRef(new Animated.Value(0)).current;
   const pushNoticeHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -197,6 +207,23 @@ export default function RecordDoneScreen() {
   const isRecording = recordStatus === STATUS.RECORDING;
   const todayKey = useMemo(() => toDateKey(now), [now]);
   const isLockedToday = false;
+  
+  const cassetteFlipOpacity = cassetteFlip.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: [0.16, 1, 0.16],
+  });
+  const cassetteFlipScale = cassetteFlip.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: [0.92, 1, 0.92],
+  });
+  const cassetteFlipRotateY = cassetteFlip.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: ["14deg", "0deg", "-14deg"],
+  });
+  const cassetteFlipTranslateX = cassetteFlip.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: [-58, 0, 58],
+  });
 
   const clearTimer = () => {
     if (intervalRef.current) {
@@ -204,6 +231,48 @@ export default function RecordDoneScreen() {
       intervalRef.current = null;
     }
   };
+
+  const openWifiSettings = useCallback(async () => {
+    const tryOpenUrl = async (url: string): Promise<boolean> => {
+      try {
+        const canOpen = await Linking.canOpenURL(url).catch(() => true);
+        if (canOpen === false) {
+          return false;
+        }
+        await Linking.openURL(url);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    try {
+      if (Platform.OS === "android") {
+        await Linking.sendIntent("android.settings.WIFI_SETTINGS");
+        return;
+      }
+
+      if (Platform.OS === "ios") {
+        if (
+          (await tryOpenUrl("App-Prefs:WIFI")) ||
+          (await tryOpenUrl("App-prefs:WIFI")) ||
+          (await tryOpenUrl("App-Prefs:root=WIFI")) ||
+          (await tryOpenUrl("App-prefs:root=WIFI")) ||
+          (await tryOpenUrl("App-Prefs:root=Settings&path=WIFI")) ||
+          (await tryOpenUrl("prefs:root=WIFI")) ||
+          (await tryOpenUrl("App-Prefs:"))
+        ) {
+          return;
+        }
+      }
+
+      await Linking.openSettings();
+    } catch {
+      try {
+        await Linking.openSettings();
+      } catch {}
+    }
+  }, []);
 
   const unloadSound = useCallback(async () => {
     playbackSubscriptionRef.current?.remove();
@@ -506,11 +575,56 @@ export default function RecordDoneScreen() {
     setIsSaveComplete(false);
   }, [unloadSound]);
 
+  const transitionCassetteConnectPrompt = useCallback(
+    (nextVisible: boolean) => {
+      if (isCassetteFlipAnimating) return;
+      if (isCassetteConnectPromptVisible === nextVisible) return;
+
+      const outDirection = nextVisible ? 1 : -1;
+      setIsCassetteFlipAnimating(true);
+      cassetteFlip.stopAnimation();
+      Animated.timing(cassetteFlip, {
+        toValue: outDirection,
+        duration: CASSETTE_FLIP_OUT_DURATION_MS,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (!finished) {
+          cassetteFlip.setValue(0);
+          setIsCassetteFlipAnimating(false);
+          return;
+        }
+
+        setIsCassetteConnectPromptVisible(nextVisible);
+        cassetteFlip.setValue(-outDirection);
+
+        Animated.timing(cassetteFlip, {
+          toValue: 0,
+          duration: CASSETTE_FLIP_IN_DURATION_MS,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }).start(() => {
+          setIsCassetteFlipAnimating(false);
+        });
+      });
+    },
+    [cassetteFlip, isCassetteConnectPromptVisible, isCassetteFlipAnimating],
+  );
+
   useEffect(() => {
     if (flow === FLOW.RECORD) {
       setIsRecordPressing(false);
     }
   }, [flow]);
+
+  useEffect(() => {
+    if (flow !== FLOW.RECORD || activeTab !== "rec") {
+      cassetteFlip.stopAnimation();
+      cassetteFlip.setValue(0);
+      setIsCassetteFlipAnimating(false);
+      setIsCassetteConnectPromptVisible(false);
+    }
+  }, [activeTab, cassetteFlip, flow]);
 
   useEffect(() => {
     slideX.setValue(activeTab === "rec" ? 0 : -slideWidth);
@@ -1191,7 +1305,58 @@ export default function RecordDoneScreen() {
                   </View>
                 </Animated.View>
               ) : null}
-              <View style={styles.topArea}>
+              {isCassetteConnectPromptVisible ? (
+                <View
+                  pointerEvents="none"
+                  style={[styles.dimLayer, styles.dimLayerForSaveComplete]}
+                />
+              ) : null}
+              <Animated.View
+                pointerEvents={isCassetteFlipAnimating ? "none" : "auto"}
+                style={[
+                  styles.cassetteFlipLayer,
+                  {
+                    opacity: cassetteFlipOpacity,
+                    transform: [
+                      { perspective: 1200 },
+                      { translateX: cassetteFlipTranslateX },
+                      { rotateY: cassetteFlipRotateY },
+                      { scale: cassetteFlipScale },
+                    ],
+                  },
+                ]}
+              >
+                <View style={styles.topArea}>
+                {flow === FLOW.RECORD &&
+                activeTab === "rec" &&
+                !isCassetteConnectPromptVisible ? (
+                  <Pressable
+                    onPress={() => transitionCassetteConnectPrompt(true)}
+                    hitSlop={10}
+                    style={styles.cassetteTopButton}
+                  >
+                    <CassetteButtonSvg
+                      width={styles.cassetteTopButtonIcon.width}
+                      height={styles.cassetteTopButtonIcon.height}
+                      style={styles.cassetteTopButtonIcon}
+                    />
+                  </Pressable>
+                ) : null}
+                {flow === FLOW.RECORD &&
+                activeTab === "rec" &&
+                isCassetteConnectPromptVisible ? (
+                  <Pressable
+                    onPress={() => transitionCassetteConnectPrompt(false)}
+                    hitSlop={10}
+                    style={styles.smartphoneTopButton}
+                  >
+                    <SmartphoneBackSvg
+                      width={styles.smartphoneTopButtonBg.width}
+                      height={styles.smartphoneTopButtonBg.height}
+                      style={styles.smartphoneTopButtonBg}
+                    />
+                  </Pressable>
+                ) : null}
                 {flow === FLOW.REVIEW && activeTab === "rec" ? (
                   <View style={styles.retakeTopRow}>
                     <Pressable
@@ -1205,12 +1370,14 @@ export default function RecordDoneScreen() {
                   </View>
                 ) : null}
 
-                <RecordToolbar
-                  active={activeTab}
-                  onPressRec={() => setActiveTab("rec")}
-                  onPressArchive={() => setActiveTab("archive")}
-                  hasUnopenedInArchive={hasUnopenedInArchive}
-                />
+                {!isCassetteConnectPromptVisible ? (
+                  <RecordToolbar
+                    active={activeTab}
+                    onPressRec={() => setActiveTab("rec")}
+                    onPressArchive={() => setActiveTab("archive")}
+                    hasUnopenedInArchive={hasUnopenedInArchive}
+                  />
+                ) : null}
               </View>
 
               <View
@@ -1227,77 +1394,128 @@ export default function RecordDoneScreen() {
                   ]}
                 >
                   <View style={[styles.slidePane, { width: slideWidth }]}>
-                    <Text style={styles.dateText}>
-                      {formatDisplayDate(now)}
-                    </Text>
+                    {!isCassetteConnectPromptVisible ? (
+                      <Text style={styles.dateText}>
+                        {formatDisplayDate(now)}
+                      </Text>
+                    ) : null}
 
                     <View style={styles.centerArea}>
                       {flow === FLOW.RECORD ? (
-                        <View style={styles.flowLayer}>
-                          <View
-                            style={[
-                              styles.recordGroup,
-                              { marginTop: RECORD_BUTTON_OFFSET_Y },
-                            ]}
-                          >
-                            <Animated.View
+                        isCassetteConnectPromptVisible ? (
+                          <View style={styles.connectionGuideLayer}>
+                            <ScrollView
+                              style={styles.connectionGuideScroll}
+                              contentContainerStyle={
+                                styles.connectionGuideScrollContent
+                              }
+                              showsVerticalScrollIndicator={false}
+                            >
+                              <View style={styles.connectionGuideCard}>
+                                <Text style={styles.connectionGuideMessage}>
+                                  カセットレコーダー{"\n"}接続しましょう
+                                </Text>
+                              </View>
+                              <View style={styles.connectionGuideActions}>
+                                <Pressable
+                                  onPress={() => {
+                                    void openWifiSettings();
+                                  }}
+                                  style={styles.connectionGuidePrimaryAction}
+                                  hitSlop={8}
+                                >
+                                  <Text style={styles.connectionGuidePrimaryText}>
+                                    設定を開く
+                                  </Text>
+                                </Pressable>
+                                <Pressable
+                                  style={styles.connectionGuideHelpAction}
+                                >
+                                  <Text style={styles.connectionGuideHelpText}>
+                                    接続方法
+                                  </Text>
+                                </Pressable>
+                                <View style={styles.connectionGuideBottomCard}>
+                                  <Text style={styles.connectionGuideBottomText}>
+                                    1. カセットレコーダーの電源を{"\n"}いれます
+                                    {"\n\n"}
+                                    2. 「設定」アプリで
+                                    {"\n"}
+                                    「_echocapsule_dev」を選ぶ
+                                    {"\n\n"}
+                                    3. パスワードを入れる
+                                  </Text>
+                                </View>
+                              </View>
+                            </ScrollView>
+                          </View>
+                        ) : (
+                          <View style={styles.flowLayer}>
+                            <View
                               style={[
-                                styles.buttonWrap,
-                                isRecordVisualActive && styles.recordingGlow,
-                                { transform: [{ scale: pulse }] },
+                                styles.recordGroup,
+                                { marginTop: RECORD_BUTTON_OFFSET_Y },
                               ]}
                             >
-                              <Pressable
-                                style={styles.buttonPressable}
-                                onPressIn={() => {
-                                  setIsRecordPressing(true);
-                                  void startRecording();
-                                }}
-                                onPressOut={handleRecordPressOut}
-                                pressRetentionOffset={{
-                                  top: 10000,
-                                  left: 10000,
-                                  right: 10000,
-                                  bottom: 10000,
-                                }}
-                                hitSlop={12}
-                                disabled={isLockedToday}
-                              >
-                                <Image
-                                  source={
-                                    isLockedToday
-                                      ? require("../../assets/images/norecButton.png")
-                                      : isRecordVisualActive
-                                        ? require("../../assets/images/onrec.png")
-                                        : require("../../assets/images/home_voiceButton.png")
-                                  }
-                                  style={[
-                                    styles.voiceButton,
-                                    isLockedToday && styles.voiceButtonDisabled,
-                                    isLockedToday && {
-                                      transform: [
-                                        { translateY: NOREC_BUTTON_NUDGE_Y },
-                                      ],
-                                    },
-                                    { tintColor: undefined },
-                                  ]}
-                                  resizeMode="contain"
-                                />
-                              </Pressable>
-                            </Animated.View>
-                            {!isLockedToday ? (
-                              <Text
+                              <Animated.View
                                 style={[
-                                  styles.recordTimeText,
-                                  isRecordingWarning &&
-                                    styles.recordTimeTextWarning,
+                                  styles.buttonWrap,
+                                  isRecordVisualActive && styles.recordingGlow,
+                                  { transform: [{ scale: pulse }] },
                                 ]}
                               >
-                                {formatMillis(elapsedMs)}
-                              </Text>
-                            ) : null}
+                                <Pressable
+                                  style={styles.buttonPressable}
+                                  onPressIn={() => {
+                                    setIsRecordPressing(true);
+                                    void startRecording();
+                                  }}
+                                  onPressOut={handleRecordPressOut}
+                                  pressRetentionOffset={{
+                                    top: 10000,
+                                    left: 10000,
+                                    right: 10000,
+                                    bottom: 10000,
+                                  }}
+                                  hitSlop={12}
+                                  disabled={isLockedToday}
+                                >
+                                  <Image
+                                    source={
+                                      isLockedToday
+                                        ? require("../../assets/images/norecButton.png")
+                                        : isRecordVisualActive
+                                          ? require("../../assets/images/onrec.png")
+                                          : require("../../assets/images/home_voiceButton.png")
+                                    }
+                                    style={[
+                                      styles.voiceButton,
+                                      isLockedToday && styles.voiceButtonDisabled,
+                                      isLockedToday && {
+                                        transform: [
+                                          { translateY: NOREC_BUTTON_NUDGE_Y },
+                                        ],
+                                      },
+                                      { tintColor: undefined },
+                                    ]}
+                                    resizeMode="contain"
+                                  />
+                                </Pressable>
+                              </Animated.View>
+                              {!isLockedToday ? (
+                                <Text
+                                  style={[
+                                    styles.recordTimeText,
+                                    isRecordingWarning &&
+                                      styles.recordTimeTextWarning,
+                                  ]}
+                                >
+                                  {formatMillis(elapsedMs)}
+                                </Text>
+                              ) : null}
+                            </View>
                           </View>
-                        </View>
+                        )
                       ) : (
                         <View style={styles.flowLayer}>
                           <View
@@ -1385,7 +1603,9 @@ export default function RecordDoneScreen() {
                       ) : null}
                     </View>
 
-                    {activeTab === "rec" && flow === FLOW.RECORD ? (
+                    {activeTab === "rec" &&
+                    flow === FLOW.RECORD &&
+                    !isCassetteConnectPromptVisible ? (
                       <Text style={styles.recordGuideText}>{guideText}</Text>
                     ) : null}
                   </View>
@@ -1397,7 +1617,8 @@ export default function RecordDoneScreen() {
                     />
                   </View>
                 </Animated.View>
-              </View>
+                </View>
+              </Animated.View>
             </View>
 
             {(isProjectModalVisible ||
@@ -1693,6 +1914,10 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "center",
   },
+  cassetteFlipLayer: {
+    flex: 1,
+    width: "100%",
+  },
   pushNoticeWrap: {
     position: "absolute",
     top: -10,
@@ -1727,6 +1952,36 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   topArea: { width: "100%", alignItems: "center", paddingTop: 26 },
+  cassetteTopButton: {
+    position: "absolute",
+    top: -10,
+    left: -16,
+    width: 84,
+    height: 84,
+    zIndex: 20,
+    elevation: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cassetteTopButtonIcon: {
+    width: 82,
+    height: 84,
+  },
+  smartphoneTopButton: {
+    position: "absolute",
+    top: -10,
+    right: -12,
+    width: 84,
+    height: 84,
+    zIndex: 20,
+    elevation: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  smartphoneTopButtonBg: {
+    width: 82,
+    height: 84,
+  },
   slideViewport: {
     flex: 1,
     width: "100%",
@@ -1761,6 +2016,89 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "center",
     justifyContent: "center",
+  },
+  connectionGuideLayer: {
+    width: "100%",
+    flex: 1,
+  },
+  connectionGuideScroll: {
+    width: "100%",
+    flex: 1,
+  },
+  connectionGuideScrollContent: {
+    alignItems: "center",
+    paddingTop: 82,
+    paddingBottom: 0,
+  },
+  connectionGuideActions: {
+    width: "100%",
+    alignItems: "center",
+  },
+  connectionGuideCard: {
+    width: "90%",
+    maxWidth: 350,
+    borderRadius: 30,
+    minHeight: 170,
+    backgroundColor: "rgba(249, 249, 251, 0.88)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    marginBottom: 24,
+    marginTop:150,
+  },
+  connectionGuideMessage: {
+    color: "#17171a",
+    fontSize: 22,
+   
+    textAlign: "center",
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
+  connectionGuidePrimaryAction: {
+    marginTop: 39,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  connectionGuidePrimaryText: {
+    color: "#2d6fdf",
+    fontSize: 20,
+    lineHeight: 20,
+    textDecorationLine: "underline",
+    fontWeight: "700",
+  },
+  connectionGuideHintText: {
+    marginTop: 4,
+    fontSize: 11,
+    lineHeight: 16,
+    color: "#5f6270",
+    textAlign: "center",
+  },
+  connectionGuideHelpAction: {
+    marginTop: 100,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  connectionGuideHelpText: {
+    color: "#1e1f24",
+    fontSize: 20,
+    lineHeight: 22,
+    fontWeight: "700",
+  },
+  connectionGuideBottomCard: {
+    marginTop: 8,
+    width: "90%",
+    maxWidth: 350,
+    minHeight: 274,
+    borderRadius: 30,
+    backgroundColor: "rgba(249, 249, 251, 0.9)",
+    paddingHorizontal: 26,
+    paddingVertical: 30,
+  },
+  connectionGuideBottomText: {
+    color: "#17171a",
+    fontSize: 17,
+    lineHeight: 41,
+    fontWeight: "700",
   },
   recordGroup: {
     alignItems: "center",
