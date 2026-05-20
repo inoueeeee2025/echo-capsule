@@ -9,7 +9,11 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yuri1234567.echocapsule",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -43,6 +47,15 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "hardware": {
+        "wsUrl": "ws://192.168.46.1/ws"
+      },
+      "eas": {
+        "projectId": "87693ad6-097a-4e38-a156-d3c54aa0d430"
+      }
     }
   }
 }
