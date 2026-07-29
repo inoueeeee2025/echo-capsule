@@ -614,16 +614,25 @@ export default function RecordDoneScreen() {
   const saveProject = useCallback(async () => {
     const savedCapsuleId = await persistCurrentRecording();
 
-    if (savedCapsuleId) {
-      const shouldOpenCassetteFirst = await hardwareWS.waitUntilConnected(600);
-      if (shouldOpenCassetteFirst) {
-        await resetForNextRecording();
-        router.push({
-          pathname: "/cassette",
-          params: { capsuleId: savedCapsuleId, showArrivalIntro: "1" },
-        });
-        return;
-      }
+    // 保存できていないのに「保管しました」を出さない。
+    // 以前は失敗しても成功表示に進み、テープ名が空のまま
+    // 「を保管しました。」とだけ表示されていた。
+    if (!savedCapsuleId) {
+      Alert.alert(
+        "保存できませんでした",
+        "録音を保管できませんでした。もう一度お試しください。",
+      );
+      return;
+    }
+
+    const shouldOpenCassetteFirst = await hardwareWS.waitUntilConnected(600);
+    if (shouldOpenCassetteFirst) {
+      await resetForNextRecording();
+      router.push({
+        pathname: "/cassette",
+        params: { capsuleId: savedCapsuleId, showArrivalIntro: "1" },
+      });
+      return;
     }
 
     setIsSaveComplete(true);

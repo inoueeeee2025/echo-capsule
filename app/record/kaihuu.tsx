@@ -1,6 +1,6 @@
 ﻿import ArchiveContent from "@/components/ArchiveContent";
 import RecordToolbar from "@/components/RecordToolbar";
-import { loadCapsules, saveCapsules } from "@/src/capsules/storage";
+import { loadCapsules } from "@/src/capsules/storage";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Slider from "@react-native-community/slider";
@@ -152,22 +152,6 @@ export default function KaihuuScreen() {
     );
   }, []);
 
-  const openAllDay21Capsules = useCallback(async () => {
-    const list = await loadCapsules();
-    let changed = false;
-    const nowMs = Date.now();
-    const next = list.map((item) => {
-      const unlockDate = new Date(item.unlockAtMs);
-      const isDay21 = unlockDate.getDate() === 21;
-      if (!isDay21 || item.openedAtMs !== null) return item;
-      changed = true;
-      return { ...item, openedAtMs: nowMs };
-    });
-    if (changed) {
-      await saveCapsules(next);
-    }
-  }, []);
-
   useEffect(() => {
     loadRecordedDateKey();
   }, [loadRecordedDateKey]);
@@ -185,11 +169,8 @@ export default function KaihuuScreen() {
   );
 
   useEffect(() => {
-    (async () => {
-      await openAllDay21Capsules();
-      await refreshUnopenedBadge();
-    })();
-  }, [openAllDay21Capsules, refreshUnopenedBadge]);
+    void refreshUnopenedBadge();
+  }, [refreshUnopenedBadge]);
 
   const unloadSound = useCallback(async () => {
     playbackSubscriptionRef.current?.remove();
@@ -365,10 +346,11 @@ export default function KaihuuScreen() {
   ]);
 
   const todayKey = toDateKey(new Date());
-  const isLockedToday = recordedDateKey === todayKey;
-  const recGuideText = isLockedToday
-    ? "本日の録音は完了しました。\n1年後のあなたへ届けられます。"
-    : "録音ボタンを押して録音しましょう";
+  // 1日1回の録音制限は現在無効。rec 画面側（rec.tsx）でも無効にしてあり、
+  // 有効/無効が画面ごとにずれると仕様が矛盾するのでここで揃えている。
+  // 制限を復活させるときは両方を戻すこと。
+  const isLockedToday = false;
+  const recGuideText = "録音ボタンを押して録音しましょう";
 
   const transcriptLine1 = "こんにちはー";
   const transcriptLine2 = "おはようございますー";

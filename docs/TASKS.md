@@ -388,6 +388,51 @@ A-1〜A-3 が終わっていれば、どちらでも動く。リハーサルの�
 
 ---
 
+## G. ペアリング画面の移植 ⏱ 2h
+
+`feature/ui-detail` ブランチ（`e323cb5`）にある、ハードの Wi-Fi 接続を案内する画面を取り込む。
+**展示では来場者が自分で接続するため価値が高い。**
+
+### ⚠️ マージ・cherry-pick してはいけない
+
+このブランチは `c673443` から分岐している。**`src/hardware/ws.ts` が生まれる前**
+（`5d7d011 ハードウェア接続`）の地点なので、当時は共有の WS クライアントが無く、
+`rec.tsx` の中に WebSocket 実装が丸ごと書かれている。
+
+そのまま統合すると **同じデバイスに WebSocket が2本張られる**。
+
+- ボタンを1回押すと両方が反応し、録音が二重に走る
+- ファーム側は `cleanupClients()` が無いため（`docs/HARDWARE.md` F-2）、接続増加で悪化する
+- 再接続ロジックが2系統独立して走る
+
+### 移植するもの / 捨てるもの
+
+| 対象 | 判断 |
+|---|---|
+| `assets/images/cassetteButton.svg` / `smartphoneBack.svg` | ✅ そのままコピー |
+| ペアリング促し UI（カセットのめくりアニメーション） | ✅ 移植 |
+| `openWifiSettings()` — iOS/Android の Wi-Fi 設定を開く | ✅ 移植 |
+| `isHardwareWifiConnected` の状態表示 | ✅ ただし `hardwareWS.subscribeConnection()` に繋ぎ替える |
+| 接続後に自動でカセットモードへ遷移 | ✅ 移植 |
+| `HARDWARE_WS_URL` / `hardwareWsRef` / `scheduleReconnect()` | ❌ 捨てる。`hardwareWS` に統合済み |
+| `resolveHardwareButtonsFromMessage()` 等のパーサ | ❌ 捨てる。`ws.ts` が担当 |
+| `DeviceEventEmitter` によるボタン配送 | ❌ 捨てる。同一ファイル内で emit/listen しているだけの遠回り |
+| `handleHardwareRecPress()` 等のボタンハンドラ | ❌ 捨てる。`stopAndSaveFromHardware()` に集約済み |
+
+### 手順
+
+1. SVG 2点をコピー
+2. ペアリング UI の JSX とスタイルを移植
+3. `openWifiSettings()` を移植
+4. `isHardwareWifiConnected` を `hardwareWS.subscribeConnection()` から供給する
+5. 接続後の自動遷移とスワイプ連携を繋ぐ
+
+- **完了条件**：ハード未接続時にペアリング案内が出て、Wi-Fi 設定を開ける。
+  接続すると案内が消えてカセットモードに進める。**WebSocket が1本しか張られない**
+- **確認方法**：`/dev` 画面の「再接続試行回数」が不自然に増えないこと
+
+---
+
 ## 予備日（Day 6〜7）
 
 上記が押した場合のバッファ。余裕があれば以下に着手する。
@@ -436,5 +481,7 @@ Day 4  [ ] E-1 待ち時間の調整     [ ] E-2 音声の永続化   [ ] E-3 WS
 Day 5  [ ] F-1 3経路の実機通し    [ ] F-2 /dev 手順確立
        [ ] F-3 当日の保険         [ ] F-4 実行形態の決定
 ```
+
+後から追加  [ ] G ペアリング画面の移植（展示用・2h）
 
 🔴 = これが落ちると発表が成立しない
