@@ -33,8 +33,10 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  DeviceEventEmitter,
   Dimensions,
   Easing,
+  type EmitterSubscription,
   Image,
   ImageBackground,
   Keyboard,
@@ -90,7 +92,66 @@ const PUSH_NOTICE_SOUND_CLEANUP_MS = 1200;
 const CASSETTE_FLIP_OUT_DURATION_MS = 190;
 const CASSETTE_FLIP_IN_DURATION_MS = 230;
 const PUSH_NOTICE_SOUND_FILE = require("../../assets/soun/決定ボタンを押す40.mp3");
+const HARDWARE_WS_URL = (
+  process.env.EXPO_PUBLIC_HARDWARE_WS_URL ?? "ws://192.168.46.1/ws"
+).trim();
+const WS_RECONNECT_DELAY_MS = 1500;
 let didDevBootResetRecordedDateKey = false;
+
+type HardwareButtonState = {
+  stop: boolean;
+  play: boolean;
+  rec: boolean;
+};
+
+function resolveHardwareWifiConnectedFromPayload(payload: unknown): boolean | null {
+  if (typeof payload === "boolean") return payload;
+  if (!payload || typeof payload !== "object") return null;
+  const candidate =
+    (payload as { connected?: unknown }).connected ??
+    (payload as { isConnected?: unknown }).isConnected ??
+    (payload as { wifiConnected?: unknown }).wifiConnected;
+  return typeof candidate === "boolean" ? candidate : null;
+}
+
+function resolveHardwareWifiConnectedFromMessage(data: unknown): boolean | null {
+  if (typeof data === "boolean") return data;
+  if (typeof data !== "string") return null;
+  const trimmed = data.trim();
+  if (trimmed.length === 0) return null;
+  if (trimmed === "connected" || trimmed === "wifi_connected") return true;
+  if (trimmed === "disconnected" || trimmed === "wifi_disconnected")
+    return false;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return resolveHardwareWifiConnectedFromPayload(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function resolveHardwareButtonsFromMessage(
+  data: unknown,
+): HardwareButtonState | null {
+  if (typeof data !== "string") return null;
+  try {
+    const parsed: unknown = JSON.parse(data);
+    if (!parsed || typeof parsed !== "object") return null;
+    const stop = (parsed as { stop?: unknown }).stop;
+    const play = (parsed as { play?: unknown }).play;
+    const rec = (parsed as { rec?: unknown }).rec;
+    if (
+      typeof stop !== "boolean" ||
+      typeof play !== "boolean" ||
+      typeof rec !== "boolean"
+    ) {
+      return null;
+    }
+    return { stop, play, rec };
+  } catch {
+    return null;
+  }
+}
 
 function toDateKey(date: Date): string {
   const y = date.getFullYear();
@@ -161,6 +222,7 @@ export default function RecordDoneScreen() {
   const [isCassetteConnectPromptVisible, setIsCassetteConnectPromptVisible] =
     useState(false);
   const [isCassetteFlipAnimating, setIsCassetteFlipAnimating] = useState(false);
+  const [isHardwareWifiConnected, setIsHardwareWifiConnected] = useState(false);
 
   const pulse = useRef(new Animated.Value(1)).current;
   const saveReveal = useRef(new Animated.Value(0)).current;
@@ -186,6 +248,15 @@ export default function RecordDoneScreen() {
   > | null>(null);
   const slideX = useRef(new Animated.Value(0)).current;
   const dismissedNoticeIdsRef = useRef<Set<string>>(new Set());
+  const hardwareWsRef = useRef<WebSocket | null>(null);
+  const wsReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const hardwareButtonStateRef = useRef<HardwareButtonState>({
+    stop: false,
+    play: false,
+    rec: false,
+  });
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -482,6 +553,66 @@ export default function RecordDoneScreen() {
     } catch {}
   }, [durationMillis, isLoaded, isPlaying, positionMillis]);
 
+  const handleStopRecordingFromHardware = useCallback(async () => {
+    if (recordStatusRef.current !== STATUS.RECORDING) return;
+    const result = await stopRecording();
+    if (result) {
+      setFlow(FLOW.REVIEW);
+    } else {
+      setRecordStatus(STATUS.IDLE);
+      recordStatusRef.current = STATUS.IDLE;
+    }
+  }, [stopRecording]);
+
+  const handleHardwareRecPress = useCallback(() => {
+    if (activeTab !== "rec") return;
+    if (isCassetteConnectPromptVisible) return;
+
+    if (flow === FLOW.RECORD) {
+      if (recordStatusRef.current === STATUS.RECORDING) {
+        void handleStopRecordingFromHardware();
+        return;
+      }
+      if (recordStatusRef.current === STATUS.IDLE) {
+        void startRecording();
+      }
+    }
+  }, [
+    activeTab,
+    flow,
+    handleStopRecordingFromHardware,
+    isCassetteConnectPromptVisible,
+    startRecording,
+  ]);
+
+  const handleHardwarePlayPress = useCallback(() => {
+    if (activeTab !== "rec") return;
+    if (flow !== FLOW.REVIEW) return;
+    if (isCassetteConnectPromptVisible) return;
+    void togglePlay();
+  }, [activeTab, flow, isCassetteConnectPromptVisible, togglePlay]);
+
+  const handleHardwareStopPress = useCallback(() => {
+    if (activeTab !== "rec") return;
+    if (isCassetteConnectPromptVisible) return;
+
+    if (flow === FLOW.RECORD && recordStatusRef.current === STATUS.RECORDING) {
+      void handleStopRecordingFromHardware();
+      return;
+    }
+
+    if (flow === FLOW.REVIEW && isPlaying) {
+      void togglePlay();
+    }
+  }, [
+    activeTab,
+    flow,
+    handleStopRecordingFromHardware,
+    isCassetteConnectPromptVisible,
+    isPlaying,
+    togglePlay,
+  ]);
+
   const openProjectModal = useCallback(async () => {
     const s = soundRef.current;
     if (s && isPlaying) {
@@ -492,6 +623,10 @@ export default function RecordDoneScreen() {
     setIsPlaying(false);
     setIsProjectModalVisible(true);
   }, [isPlaying]);
+
+  const openCassetteMode = useCallback(() => {
+    router.push("/cassette");
+  }, [router]);
 
   const closeProjectModal = useCallback(() => {
     setIsProjectModalVisible(false);
@@ -625,6 +760,120 @@ export default function RecordDoneScreen() {
       setIsCassetteConnectPromptVisible(false);
     }
   }, [activeTab, cassetteFlip, flow]);
+
+  useEffect(() => {
+    if (!isHardwareWifiConnected || !isCassetteConnectPromptVisible) return;
+    transitionCassetteConnectPrompt(false);
+  }, [
+    isCassetteConnectPromptVisible,
+    isHardwareWifiConnected,
+    transitionCassetteConnectPrompt,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const clearReconnectTimer = () => {
+      if (!wsReconnectTimerRef.current) return;
+      clearTimeout(wsReconnectTimerRef.current);
+      wsReconnectTimerRef.current = null;
+    };
+
+    const scheduleReconnect = () => {
+      if (cancelled || wsReconnectTimerRef.current) return;
+      wsReconnectTimerRef.current = setTimeout(() => {
+        wsReconnectTimerRef.current = null;
+        if (cancelled) return;
+        connect();
+      }, WS_RECONNECT_DELAY_MS);
+    };
+
+    const connect = () => {
+      if (cancelled || hardwareWsRef.current) return;
+      try {
+        const ws = new WebSocket(HARDWARE_WS_URL);
+        hardwareWsRef.current = ws;
+
+        ws.onopen = () => {
+          setIsHardwareWifiConnected(true);
+        };
+
+        ws.onmessage = (event) => {
+          const next = resolveHardwareWifiConnectedFromMessage(event.data);
+          if (next != null) {
+            setIsHardwareWifiConnected(next);
+          }
+          const buttons = resolveHardwareButtonsFromMessage(event.data);
+          if (!buttons) return;
+          const prev = hardwareButtonStateRef.current;
+          if (buttons.stop && !prev.stop) {
+            DeviceEventEmitter.emit("hardware-stop");
+          }
+          if (buttons.play && !prev.play) {
+            DeviceEventEmitter.emit("hardware-play");
+          }
+          if (buttons.rec && !prev.rec) {
+            DeviceEventEmitter.emit("hardware-rec");
+          }
+          hardwareButtonStateRef.current = buttons;
+        };
+
+        ws.onerror = () => {
+          setIsHardwareWifiConnected(false);
+        };
+
+        ws.onclose = () => {
+          if (hardwareWsRef.current === ws) {
+            hardwareWsRef.current = null;
+          }
+          setIsHardwareWifiConnected(false);
+          hardwareButtonStateRef.current = {
+            stop: false,
+            play: false,
+            rec: false,
+          };
+          scheduleReconnect();
+        };
+      } catch {
+        setIsHardwareWifiConnected(false);
+        scheduleReconnect();
+      }
+    };
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      clearReconnectTimer();
+      const ws = hardwareWsRef.current;
+      hardwareWsRef.current = null;
+      if (ws) {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        ws.close();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const subs: EmitterSubscription[] = [
+      DeviceEventEmitter.addListener("hardware-rec", () => {
+        handleHardwareRecPress();
+      }),
+      DeviceEventEmitter.addListener("hardware-play", () => {
+        handleHardwarePlayPress();
+      }),
+      DeviceEventEmitter.addListener("hardware-stop", () => {
+        handleHardwareStopPress();
+      }),
+    ];
+
+    return () => {
+      subs.forEach((sub) => sub.remove());
+    };
+  }, [handleHardwarePlayPress, handleHardwareRecPress, handleHardwareStopPress]);
 
   useEffect(() => {
     slideX.setValue(activeTab === "rec" ? 0 : -slideWidth);
@@ -1171,15 +1420,34 @@ export default function RecordDoneScreen() {
             gesture.translationX >= TAB_SWIPE_THRESHOLD ||
             (gesture.velocityX > 220 && gesture.translationX > 8);
 
-          if (isLeftSwipe && activeTab === "rec") {
-            setActiveTab("archive");
-            return;
+          if (activeTab === "rec") {
+            if (flow === FLOW.RECORD && isLeftSwipe) {
+              if (isHardwareWifiConnected) {
+                openCassetteMode();
+              } else if (!isCassetteConnectPromptVisible) {
+                transitionCassetteConnectPrompt(true);
+              }
+              return;
+            }
+            if (isRightSwipe && !isCassetteConnectPromptVisible) {
+              setActiveTab("archive");
+              return;
+            }
           }
           if (isRightSwipe && activeTab === "archive") {
             setActiveTab("rec");
           }
         }),
-    [activeTab, flow, isRecordPressing, isRecording],
+    [
+      activeTab,
+      flow,
+      isCassetteConnectPromptVisible,
+      isHardwareWifiConnected,
+      isRecordPressing,
+      isRecording,
+      openCassetteMode,
+      transitionCassetteConnectPrompt,
+    ],
   );
 
   useFocusEffect(
@@ -1331,7 +1599,13 @@ export default function RecordDoneScreen() {
                 activeTab === "rec" &&
                 !isCassetteConnectPromptVisible ? (
                   <Pressable
-                    onPress={() => transitionCassetteConnectPrompt(true)}
+                    onPress={() => {
+                      if (isHardwareWifiConnected) {
+                        openCassetteMode();
+                      } else {
+                        transitionCassetteConnectPrompt(true);
+                      }
+                    }}
                     hitSlop={10}
                     style={styles.cassetteTopButton}
                   >
@@ -2008,18 +2282,19 @@ const styles = StyleSheet.create({
   centerArea: {
     flex: 1,
     width: "100%",
+    position: "relative",
     alignItems: "center",
     justifyContent: "center",
   },
   flowLayer: {
-    position: "absolute",
-    width: "100%",
+    ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
   },
   connectionGuideLayer: {
     width: "100%",
     flex: 1,
+    alignSelf: "stretch",
   },
   connectionGuideScroll: {
     width: "100%",
