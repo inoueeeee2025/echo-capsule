@@ -1,9 +1,14 @@
-﻿import { loadCapsules } from "@/src/capsules/storage";
+﻿import { addCapsule, loadCapsules } from "@/src/capsules/storage";
 import { hardwareWS, type HardwareState } from "@/src/hardware/ws";
 import {
   createAudioPlayer,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
   setIsAudioActiveAsync,
+  useAudioRecorder,
   type AudioPlayer,
+  type AudioRecorder,
   type AudioStatus,
 } from "expo-audio";
 import { ZenAntiqueSoft_400Regular } from "@expo-google-fonts/zen-antique-soft";
@@ -46,6 +51,7 @@ const ARRIVAL_INTRO_SLIDE_DISTANCE_RATIO = 0.36;
 const FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD = __DEV__;
 const PROJECT_SWIPE_THRESHOLD = 28;
 const PROJECT_SLIDE_TRANSITION_MS = 180;
+const DEV_UNLOCK_DELAY_MS = 30 * 1000;
 const AnimatedImageBackground = Animated.createAnimatedComponent(ImageBackground);
 
 type PlayableCapsule = {
@@ -59,6 +65,10 @@ function formatRecordedDate(ms: number | null): string {
   if (typeof ms !== "number" || !Number.isFinite(ms)) return "";
   const d = new Date(ms);
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${WEEKDAY[d.getDay()]}`;
+}
+
+function normalizeSpinProgress(value: number) {
+  return ((value % 1) + 1) % 1;
 }
 
 export default function CassetteScreen() {
@@ -82,17 +92,25 @@ export default function CassetteScreen() {
   const [activeCapsuleTitle, setActiveCapsuleTitle] = useState("");
   const [activeCapsuleRecordedAtMs, setActiveCapsuleRecordedAtMs] = useState<number | null>(null);
   const [isArrivalIntroVisible, setIsArrivalIntroVisible] = useState(false);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const rotateProgress = useRef(new Animated.Value(0)).current;
   const pageSlideX = useRef(new Animated.Value(0)).current;
   const arrivalIntroTranslateX = useRef(new Animated.Value(0)).current;
   const arrivalIntroOpacity = useRef(new Animated.Value(0)).current;
   const isProjectSlideTransitioningRef = useRef(false);
   const pendingPageInAfterIntroRef = useRef(false);
+  const pendingMoveDeltaRef = useRef<number | null>(null);
+  const moveActiveCapsuleByRef = useRef<(delta: number) => void>(() => {});
   const progressRef = useRef(0);
   const loopRef = useRef<Animated.CompositeAnimation | null>(null);
   const playerRef = useRef<AudioPlayer | null>(null);
   const playbackSubscriptionRef = useRef<{ remove: () => void } | null>(null);
   const shouldPlayFromHardwareRef = useRef(false);
+  const isPlayingRef = useRef(false);
+  const recordingRef = useRef<AudioRecorder | null>(null);
+  const recordingStartRef = useRef(0);
+  const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isHardwareRecordingRef = useRef(false);
   const prevHardwareStateRef = useRef<HardwareState>({
     stop: false,
     play: false,
@@ -111,6 +129,10 @@ export default function CassetteScreen() {
 
   const boardWidth = DESIGN_WIDTH * uiScale;
   const boardLeft = Math.max(0, (windowWidth - boardWidth) / 2);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   const onPlaybackStatusUpdate = useCallback((status: AudioStatus) => {
     if (!status.isLoaded) {
@@ -132,6 +154,12 @@ export default function CassetteScreen() {
     try {
       current.remove();
     } catch {}
+  }, []);
+
+  const clearRecordingTimeout = useCallback(() => {
+    if (!recordingTimeoutRef.current) return;
+    clearTimeout(recordingTimeoutRef.current);
+    recordingTimeoutRef.current = null;
   }, []);
 
   const refreshPlayableCapsule = useCallback(async () => {
@@ -182,6 +210,16 @@ export default function CassetteScreen() {
     });
   }, [requestedCapsuleId]);
 
+  const scheduleLatestCapsuleRefresh = useCallback(() => {
+    clearRecordingTimeout();
+    recordingTimeoutRef.current = setTimeout(() => {
+      void (async () => {
+        await refreshPlayableCapsule();
+        setActiveCapsuleIndex(0);
+      })();
+    }, DEV_UNLOCK_DELAY_MS + 300);
+  }, [clearRecordingTimeout, refreshPlayableCapsule]);
+
   useEffect(() => {
     if (playableCapsules.length === 0) return;
     const safeIndex = Math.min(
@@ -195,11 +233,110 @@ export default function CassetteScreen() {
     setActiveCapsuleRecordedAtMs(target.recordedAtMs);
   }, [activeCapsuleIndex, playableCapsules]);
 
+  const stopCassetteRecording = useCallback(async () => {
+    const recording = recordingRef.current;
+    recordingRef.current = null;
+    if (!recording) return null;
+
+    try {
+      await recording.stop();
+      await setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: true,
+      });
+      const uri = recording.getStatus().url;
+      if (!uri) return null;
+
+      const recordedAtMs = Date.now();
+      const unlockAtMs = __DEV__
+        ? recordedAtMs + DEV_UNLOCK_DELAY_MS
+        : (() => {
+            const defaultUnlockDate = new Date(recordedAtMs);
+            defaultUnlockDate.setFullYear(defaultUnlockDate.getFullYear() + 1);
+            return defaultUnlockDate.getTime();
+          })();
+      const title = `${new Date(recordedAtMs).getFullYear()}/${String(new Date(recordedAtMs).getMonth() + 1).padStart(2, "0")}/${String(new Date(recordedAtMs).getDate()).padStart(2, "0")}`;
+      const durationSec = Math.max(
+        1,
+        Math.floor((Date.now() - recordingStartRef.current) / 1000),
+      );
+
+      await addCapsule({
+        id: `capsule-${recordedAtMs}-${Math.random().toString(36).slice(2, 8)}`,
+        title,
+        audioUri: uri,
+        durationSec,
+        recordedAtMs,
+        unlockAtMs,
+        openedAtMs: null,
+        hasTranscript: true,
+      });
+      scheduleLatestCapsuleRefresh();
+      return uri;
+    } catch {
+      return null;
+    } finally {
+      isHardwareRecordingRef.current = false;
+    }
+  }, [scheduleLatestCapsuleRefresh]);
+
+  const startCassetteRecording = useCallback(async () => {
+    if (isHardwareRecordingRef.current) return;
+
+    try {
+      const { granted } = await requestRecordingPermissionsAsync();
+      if (!granted) return;
+
+      await unloadSound();
+      shouldPlayFromHardwareRef.current = false;
+      setIsPlaying(false);
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+      });
+
+      const recording = recorder;
+      await recording.prepareToRecordAsync(RecordingPresets.HIGH_QUALITY);
+      recording.record();
+      recordingRef.current = recording;
+      recordingStartRef.current = Date.now();
+      isHardwareRecordingRef.current = true;
+    } catch {
+      isHardwareRecordingRef.current = false;
+    }
+  }, [recorder, unloadSound]);
+
+  const finishPendingPageTransition = useCallback(() => {
+    arrivalIntroTranslateX.stopAnimation();
+    arrivalIntroOpacity.stopAnimation();
+    setIsArrivalIntroVisible(false);
+    pendingPageInAfterIntroRef.current = false;
+    pageSlideX.stopAnimation();
+    Animated.timing(pageSlideX, {
+      toValue: 0,
+      duration: PROJECT_SLIDE_TRANSITION_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      isProjectSlideTransitioningRef.current = false;
+      const queuedDelta = pendingMoveDeltaRef.current;
+      pendingMoveDeltaRef.current = null;
+      if (queuedDelta == null) return;
+      moveActiveCapsuleByRef.current(queuedDelta);
+    });
+  }, [arrivalIntroOpacity, arrivalIntroTranslateX, pageSlideX]);
+
   const moveActiveCapsuleBy = useCallback(
     (delta: number) => {
       if (!isLandscapeViewport) return;
       if (playableCapsules.length <= 1) return;
-      if (isProjectSlideTransitioningRef.current) return;
+      if (isProjectSlideTransitioningRef.current) {
+        if (pendingPageInAfterIntroRef.current || isArrivalIntroVisible) {
+          pendingMoveDeltaRef.current = delta;
+          finishPendingPageTransition();
+        }
+        return;
+      }
       const next = activeCapsuleIndex + delta;
       if (next < 0 || next > playableCapsules.length - 1) return;
 
@@ -218,8 +355,20 @@ export default function CassetteScreen() {
         setActiveCapsuleIndex(next);
       });
     },
-    [activeCapsuleIndex, isLandscapeViewport, pageSlideX, playableCapsules.length, windowWidth],
+    [
+      activeCapsuleIndex,
+      finishPendingPageTransition,
+      isArrivalIntroVisible,
+      isLandscapeViewport,
+      pageSlideX,
+      playableCapsules.length,
+      windowWidth,
+    ],
   );
+
+  useEffect(() => {
+    moveActiveCapsuleByRef.current = moveActiveCapsuleBy;
+  }, [moveActiveCapsuleBy]);
 
   const projectSwipeGesture = useMemo(
     () =>
@@ -228,8 +377,7 @@ export default function CassetteScreen() {
         .activeOffsetX([-18, 18])
         .failOffsetY([-24, 24])
         .minDistance(18)
-      .onEnd((gesture) => {
-          if (isProjectSlideTransitioningRef.current) return;
+        .onEnd((gesture) => {
           const isLeftSwipe =
             gesture.translationX <= -PROJECT_SWIPE_THRESHOLD ||
             (gesture.velocityX < -220 && gesture.translationX < -8);
@@ -272,19 +420,36 @@ export default function CassetteScreen() {
       const prev = prevHardwareStateRef.current;
       const playDown = s.play && !prev.play;
       const playUp = !s.play && prev.play;
+      const recDown = s.rec && !prev.rec;
+      const recUp = !s.rec && prev.rec;
       const stopDown = s.stop && !prev.stop;
 
       if (playDown) {
         handleHardwarePlaybackChange(true);
       }
-      if (playUp || stopDown) {
+      if (recDown) {
+        void startCassetteRecording();
+      }
+      if (recUp) {
+        void stopCassetteRecording();
+      }
+      if (playUp) {
         handleHardwarePlaybackChange(false);
+      }
+      if (stopDown) {
+        handleHardwarePlaybackChange(false);
+        moveActiveCapsuleBy(1);
       }
 
       prevHardwareStateRef.current = s;
     });
     return unsub;
-  }, [handleHardwarePlaybackChange]);
+  }, [
+    handleHardwarePlaybackChange,
+    moveActiveCapsuleBy,
+    startCassetteRecording,
+    stopCassetteRecording,
+  ]);
 
   useEffect(() => {
     void setIsAudioActiveAsync(true);
@@ -336,7 +501,7 @@ export default function CassetteScreen() {
 
   useEffect(() => {
     const id = rotateProgress.addListener(({ value }) => {
-      progressRef.current = ((value % 1) + 1) % 1;
+      progressRef.current = normalizeSpinProgress(value);
     });
     return () => rotateProgress.removeListener(id);
   }, [rotateProgress]);
@@ -347,17 +512,37 @@ export default function CassetteScreen() {
         loopRef.current.stop();
         loopRef.current = null;
       }
-      rotateProgress.setValue(progressRef.current);
-      loopRef.current = Animated.loop(
+
+      const startSpinLoop = () => {
+        rotateProgress.setValue(0);
+        progressRef.current = 0;
+        loopRef.current = Animated.loop(
+          Animated.timing(rotateProgress, {
+            toValue: 1,
+            duration: WHEEL_SPIN_MS,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          }),
+          { resetBeforeIteration: true },
+        );
+        loopRef.current.start();
+      };
+
+      const normalized = normalizeSpinProgress(progressRef.current);
+      if (normalized > 0) {
+        rotateProgress.setValue(normalized);
         Animated.timing(rotateProgress, {
           toValue: 1,
-          duration: WHEEL_SPIN_MS,
+          duration: Math.max(1, Math.round((1 - normalized) * WHEEL_SPIN_MS)),
           easing: Easing.linear,
           useNativeDriver: true,
-        }),
-        { resetBeforeIteration: true },
-      );
-      loopRef.current.start();
+        }).start(({ finished }) => {
+          if (!finished || !isPlayingRef.current) return;
+          startSpinLoop();
+        });
+      } else {
+        startSpinLoop();
+      }
       return;
     }
 
@@ -366,7 +551,7 @@ export default function CassetteScreen() {
       loopRef.current = null;
     }
     rotateProgress.stopAnimation((value) => {
-      const normalized = ((value % 1) + 1) % 1;
+      const normalized = normalizeSpinProgress(value);
       progressRef.current = normalized;
       rotateProgress.setValue(normalized);
     });
@@ -374,13 +559,18 @@ export default function CassetteScreen() {
 
   useEffect(() => {
     return () => {
+      clearRecordingTimeout();
       if (loopRef.current) {
         loopRef.current.stop();
         loopRef.current = null;
       }
       rotateProgress.stopAnimation();
+      if (recordingRef.current) {
+        recordingRef.current.stop().catch(() => {});
+        recordingRef.current = null;
+      }
     };
-  }, [rotateProgress]);
+  }, [clearRecordingTimeout, rotateProgress]);
 
   useEffect(() => {
     if (!shouldPlayArrivalIntro) return;
@@ -716,4 +906,3 @@ const styles = StyleSheet.create({
     fontWeight: "400",
   },
 });
-

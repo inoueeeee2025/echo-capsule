@@ -30,10 +30,12 @@ export default function RecordToolbar({
         <Image
           source={require("../assets/images/Switch_base.png")}
           style={styles.toolbarBase}
+          fadeDuration={0}
           resizeMode="contain"
         />
         <Animated.Image
           source={require("../assets/images/Segmented_active.png")}
+          fadeDuration={0}
           style={[styles.toolbarPill, { transform: [{ translateX: pillTranslateX }] }]}
           resizeMode="contain"
         />
@@ -62,6 +64,7 @@ export default function RecordToolbar({
             <Image
               source={require("../assets/images/green.png")}
               style={styles.unopenedDot}
+              fadeDuration={0}
               resizeMode="contain"
             />
           ) : null}
