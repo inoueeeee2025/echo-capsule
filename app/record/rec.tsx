@@ -1873,7 +1873,9 @@ export default function RecordDoneScreen() {
                         ) : null}
                       </View>
 
-                      {activeTab === "rec" && flow === FLOW.RECORD ? (
+                      {activeTab === "rec" &&
+                      flow === FLOW.RECORD &&
+                      !isCassetteConnectPromptVisible ? (
                         <Text style={styles.recordGuideText}>{guideText}</Text>
                       ) : null}
                     </View>
