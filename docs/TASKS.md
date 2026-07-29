@@ -33,6 +33,11 @@ Mac（家のWi-Fi）        Windows（_echocapsule_dev）
 **Windows 側ではコードを編集しない。** 動かす専用。
 `npm install` で `package-lock.json` に差分が出ても**コミットしない**こと。
 
+> ⚠️ **ブランチを切り替えたら必ず `npm install` を実行する。**
+> `package.json` が変わっていると起動時に
+> `PluginError: Failed to resolve plugin for module "..."` で止まる。
+> `npm install` にはインターネットが要るので、**家の Wi-Fi に繋いだ状態で**行うこと。
+
 ### Windows のセットアップ（家の Wi-Fi に繋いだ状態で行う）
 
 ```bash
