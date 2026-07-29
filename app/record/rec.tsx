@@ -137,6 +137,19 @@ function formatMillis(millis: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+/**
+ * 停止まで完了した録音。
+ *
+ * 保存処理はこの値を直接受け取る。state（lastRecordedUri など）を経由すると、
+ * ハードウェアのボタンから続けて保存する経路で、state の反映前に
+ * 古い値を読んでしまい保存に失敗する。
+ */
+type CompletedRecording = {
+  uri: string;
+  recordedAtMs: number;
+  durationMs: number;
+};
+
 export default function RecordDoneScreen() {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isLandscapeViewport = windowWidth > windowHeight;
@@ -336,10 +349,7 @@ export default function RecordDoneScreen() {
     if (!isSlidingRef.current) setSliderMillis(nextPositionMillis);
   }, []);
 
-  const stopRecording = useCallback(async (): Promise<{
-    uri: string;
-    recordedAtMs: number;
-  } | null> => {
+  const stopRecording = useCallback(async (): Promise<CompletedRecording | null> => {
     if (recordStatusRef.current !== STATUS.RECORDING) return null;
 
     const elapsed = Math.min(
@@ -372,7 +382,7 @@ export default function RecordDoneScreen() {
       try {
         await AsyncStorage.setItem(RECORDED_DATE_STORAGE_KEY, recordedDateKey);
       } catch {}
-      return { uri, recordedAtMs };
+      return { uri, recordedAtMs, durationMs: elapsed };
     } catch (error) {
       console.warn("[Record] stop failed:", error);
       return null;
@@ -502,21 +512,33 @@ export default function RecordDoneScreen() {
   }, [unloadSound]);
 
   const persistCurrentRecording = useCallback(async (
-    nameOverride?: string,
+    options?: {
+      nameOverride?: string;
+      /**
+       * stopRecording() の戻り値。渡された場合は state ではなくこちらを使う。
+       * ハードウェアのボタンから停止して即保存する経路では、state の反映を
+       * 待てないため必ず渡すこと。
+       */
+      recording?: CompletedRecording;
+    },
   ): Promise<string | null> => {
-    const recordedAtMs = lastRecordedAtMs ?? Date.now();
+    const source = options?.recording;
+    const audioUri = source?.uri ?? lastRecordedUri;
+    if (!audioUri) return null;
+
+    const recordedAtMs = source?.recordedAtMs ?? lastRecordedAtMs ?? Date.now();
+    const durationMs = source?.durationMs ?? elapsedMs;
     const baseDate = new Date(recordedAtMs);
     const fallbackName = `${baseDate.getFullYear()}/${baseDate.getMonth() + 1}/${baseDate.getDate()}`;
-    const normalized = (nameOverride ?? projectName).trim() || fallbackName;
+    const normalized = (options?.nameOverride ?? projectName).trim() || fallbackName;
     const unlockAtMs = computeUnlockAtMs(recordedAtMs);
-    if (!lastRecordedUri) return null;
 
     const savedCapsuleId = `capsule-${recordedAtMs}-${Math.random().toString(36).slice(2, 8)}`;
     await addCapsule({
       id: savedCapsuleId,
       title: normalized,
-      audioUri: lastRecordedUri,
-      durationSec: Math.max(1, Math.floor((elapsedMs || 1000) / 1000)),
+      audioUri,
+      durationSec: Math.max(1, Math.floor((durationMs || 1000) / 1000)),
       recordedAtMs,
       unlockAtMs,
       openedAtMs: null,
@@ -555,6 +577,30 @@ export default function RecordDoneScreen() {
     await resetForNextRecording();
   }, [resetForNextRecording]);
 
+  // ハードウェアのボタンで停止したときの、停止 → 保存 → カセット画面までの流れ。
+  // stopRecording() の戻り値をそのまま persistCurrentRecording() に渡すのが要点。
+  // state 経由にすると、更新が反映される前に読んでしまい保存されない。
+  const stopAndSaveFromHardware = useCallback(async () => {
+    const result = await stopRecording();
+    if (!result) {
+      setRecordStatus(STATUS.IDLE);
+      recordStatusRef.current = STATUS.IDLE;
+      return;
+    }
+
+    const savedCapsuleId = await persistCurrentRecording({ recording: result });
+    if (!savedCapsuleId) {
+      setFlow(FLOW.REVIEW);
+      return;
+    }
+
+    await resetForNextRecording();
+    router.push({
+      pathname: "/cassette",
+      params: { capsuleId: savedCapsuleId, showArrivalIntro: "1" },
+    });
+  }, [persistCurrentRecording, resetForNextRecording, router, stopRecording]);
+
   useEffect(() => {
     hardwareWS.connect();
 
@@ -572,69 +618,20 @@ export default function RecordDoneScreen() {
         setIsRecordPressing(true);
         void startRecording();
       }
-      if (recUp) {
+      // REC を離したときと STOP を押したときで、停止から保存までの流れは同じ。
+      // 以前は同じコードが2箇所にあり、片方だけ直す事故が起きやすかった。
+      if (recUp || stopDown) {
         setIsRecordPressing(false);
-        if (recordStatusRef.current !== STATUS.RECORDING) {
-          prevHardwareStateRef.current = s;
-          return;
+        if (recordStatusRef.current === STATUS.RECORDING) {
+          void stopAndSaveFromHardware();
         }
-        void (async () => {
-          const result = await stopRecording();
-          if (result) {
-            const savedCapsuleId = await persistCurrentRecording();
-            if (savedCapsuleId) {
-              await resetForNextRecording();
-              router.push({
-                pathname: "/cassette",
-                params: { capsuleId: savedCapsuleId, showArrivalIntro: "1" },
-              });
-              return;
-            }
-            setFlow(FLOW.REVIEW);
-            return;
-          }
-          setRecordStatus(STATUS.IDLE);
-          recordStatusRef.current = STATUS.IDLE;
-        })();
-      }
-      if (stopDown) {
-        setIsRecordPressing(false);
-        if (recordStatusRef.current !== STATUS.RECORDING) {
-          prevHardwareStateRef.current = s;
-          return;
-        }
-        void (async () => {
-          const result = await stopRecording();
-          if (result) {
-            const savedCapsuleId = await persistCurrentRecording();
-            if (savedCapsuleId) {
-              await resetForNextRecording();
-              router.push({
-                pathname: "/cassette",
-                params: { capsuleId: savedCapsuleId, showArrivalIntro: "1" },
-              });
-              return;
-            }
-            setFlow(FLOW.REVIEW);
-            return;
-          }
-          setRecordStatus(STATUS.IDLE);
-          recordStatusRef.current = STATUS.IDLE;
-        })();
       }
 
       prevHardwareStateRef.current = s;
     });
 
     return unsub;
-  }, [
-    isLockedToday,
-    persistCurrentRecording,
-    resetForNextRecording,
-    router,
-    startRecording,
-    stopRecording,
-  ]);
+  }, [isLockedToday, startRecording, stopAndSaveFromHardware]);
 
   const retakeRecording = useCallback(async () => {
     setIsRecordPressing(false);
