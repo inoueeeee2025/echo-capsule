@@ -210,6 +210,11 @@ export default function RecordDoneScreen() {
 
   const pulse = useRef(new Animated.Value(1)).current;
   const cassetteFlip = useRef(new Animated.Value(0)).current;
+  // どちらの面を見せるか（0 = 録音画面 / 1 = 接続案内）。
+  // 条件分岐で描き分けると折り返しのたびに中身が作り直され、
+  // アニメーションの後半で遅れて現れてしまうため、
+  // 両方を常に描いておいて透明度だけ切り替える。
+  const faceProgress = useRef(new Animated.Value(0)).current;
   const saveReveal = useRef(new Animated.Value(0)).current;
   const unlockOverlayOpacity = useRef(new Animated.Value(0)).current;
   const unlockOverlayContentTranslateY = useRef(new Animated.Value(44)).current;
@@ -942,6 +947,13 @@ export default function RecordDoneScreen() {
     };
   }, [stopPushNoticeSound, unloadSound]);
 
+  // 表示中の面。両方が常に描かれているので、見えないほうを透明にする。
+  const recordFaceOpacity = faceProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  });
+  const guideFaceOpacity = faceProgress;
+
   // ペアリング案内の出し入れを、カセットが裏返るように見せるための補間
   const cassetteFlipOpacity = cassetteFlip.interpolate({
     inputRange: [-1, 0, 1],
@@ -1368,27 +1380,28 @@ export default function RecordDoneScreen() {
         easing: Easing.in(Easing.cubic),
         useNativeDriver: true,
       }).start(() => {
+        // 表示する面はアニメーション値で切り替える。React の再描画を
+        // 挟まないので、折り返しの瞬間に中身が生成されることがない。
+        faceProgress.setValue(nextVisible ? 1 : 0);
         setIsCassetteConnectPromptVisible(nextVisible);
         cassetteFlip.setValue(-outDirection);
 
-        // 切り替え先の中身が描画され終わるのを待ってから戻す。
-        // すぐ始めると、まだ空のレイヤーが動き出してから
-        // カードが後追いで現れる（遅れて出てくるように見える）。
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            Animated.timing(cassetteFlip, {
-              toValue: 0,
-              duration: CASSETTE_FLIP_IN_DURATION_MS,
-              easing: Easing.out(Easing.cubic),
-              useNativeDriver: true,
-            }).start(() => {
-              setIsCassetteFlipAnimating(false);
-            });
-          });
+        Animated.timing(cassetteFlip, {
+          toValue: 0,
+          duration: CASSETTE_FLIP_IN_DURATION_MS,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }).start(() => {
+          setIsCassetteFlipAnimating(false);
         });
       });
     },
-    [cassetteFlip, isCassetteConnectPromptVisible, isCassetteFlipAnimating],
+    [
+      cassetteFlip,
+      faceProgress,
+      isCassetteConnectPromptVisible,
+      isCassetteFlipAnimating,
+    ],
   );
 
   // 案内を出している最中に接続できたら、案内を引っ込める。
@@ -1677,8 +1690,16 @@ export default function RecordDoneScreen() {
                       ) : null}
 
                       <View style={styles.centerArea}>
-                        {flow === FLOW.RECORD && isCassetteConnectPromptVisible ? (
-                          <View style={styles.connectionGuideLayer}>
+                        {flow === FLOW.RECORD ? (
+                          <Animated.View
+                            pointerEvents={
+                              isCassetteConnectPromptVisible ? "auto" : "none"
+                            }
+                            style={[
+                              styles.connectionGuideLayer,
+                              { opacity: guideFaceOpacity },
+                            ]}
+                          >
                             <ScrollView
                               style={styles.connectionGuideScroll}
                               contentContainerStyle={
@@ -1718,9 +1739,19 @@ export default function RecordDoneScreen() {
                                 </View>
                               </View>
                             </ScrollView>
-                          </View>
-                        ) : flow === FLOW.RECORD ? (
-                          <View style={styles.flowLayer}>
+                          </Animated.View>
+                        ) : null}
+
+                        {flow === FLOW.RECORD ? (
+                          <Animated.View
+                            pointerEvents={
+                              isCassetteConnectPromptVisible ? "none" : "auto"
+                            }
+                            style={[
+                              styles.flowLayer,
+                              { opacity: recordFaceOpacity },
+                            ]}
+                          >
                             <View
                               style={[
                                 styles.recordGroup,
@@ -1785,7 +1816,7 @@ export default function RecordDoneScreen() {
                                 </Text>
                               ) : null}
                             </View>
-                          </View>
+                          </Animated.View>
                         ) : (
                           <View style={styles.flowLayer}>
                             <View
@@ -2254,10 +2285,9 @@ const styles = StyleSheet.create({
     width: 82,
     height: 84,
   },
+  // 録音画面と重ねて置くため、flowLayer と同じく親いっぱいに広げる
   connectionGuideLayer: {
-    width: "100%",
-    flex: 1,
-    alignSelf: "stretch",
+    ...StyleSheet.absoluteFillObject,
   },
   connectionGuideScroll: {
     width: "100%",
