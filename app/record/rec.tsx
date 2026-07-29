@@ -47,6 +47,7 @@ import {
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { hardwareWS, type HardwareState } from "@/src/hardware/ws";
 
 const STATUS = {
   IDLE: "idle",
@@ -84,6 +85,33 @@ const PUSH_NOTICE_SLIDE_DURATION_MS = 340;
 const PUSH_NOTICE_VISIBLE_MS = 8000;
 const PUSH_NOTICE_SOUND_CLEANUP_MS = 1200;
 const PUSH_NOTICE_SOUND_FILE = require("../../assets/soun/決定ボタンを押す40.mp3");
+const DEV_UNLOCK_DELAY_MS = 30 * 1000;
+const CASSETTE_PRELOAD_ASSETS = [
+  require("../../assets/images/cassette_background.png"),
+  require("../../assets/images/leftwheel.png"),
+  require("../../assets/images/rightwheel.png"),
+  require("../../assets/images/cassetteCover.png"),
+  require("../../assets/images/cassetteBottomBar.png"),
+  require("../../assets/images/backButton.png"),
+  require("../../assets/images/mobileButton.png"),
+];
+const MOBILE_MODE_PRELOAD_ASSETS = [
+  require("../../assets/fonts/YDWbananaslipplus.otf"),
+  require("../../assets/images/Switch_base.png"),
+  require("../../assets/images/Segmented_active.png"),
+  require("../../assets/images/letter.png"),
+  require("../../assets/images/letter_background.png"),
+  require("../../assets/images/textBoard.png"),
+  require("../../assets/images/norec_background.png"),
+  require("../../assets/images/home.png"),
+  require("../../assets/images/kaihuu_background.png"),
+  require("../../assets/images/norecButton.png"),
+  require("../../assets/images/home_voiceButton.png"),
+  require("../../assets/images/stopButton.png"),
+  require("../../assets/images/saiseiButton.png"),
+  require("../../assets/images/green.png"),
+  require("../../assets/images/miniArrow.png"),
+];
 let didDevBootResetRecordedDateKey = false;
 
 function toDateKey(date: Date): string {
@@ -185,6 +213,11 @@ export default function RecordDoneScreen() {
   const playbackSubscriptionRef = useRef<{ remove: () => void } | null>(null);
   const autoStoppingRef = useRef(false);
   const isSlidingRef = useRef(false);
+  const prevHardwareStateRef = useRef<HardwareState>({
+    stop: false,
+    play: false,
+    rec: false,
+  });
 
   const recordStatusRef = useRef(recordStatus);
   useEffect(() => {
@@ -193,6 +226,26 @@ export default function RecordDoneScreen() {
   useEffect(() => {
     isSlidingRef.current = isSliding;
   }, [isSliding]);
+
+  useEffect(() => {
+    // Preload routes and assets before the phone switches to the hardware AP,
+    // where Metro may no longer be reachable.
+    void import("../cassette");
+    void import("./kaihuu");
+    void import("./kaihuu-text");
+    void Promise.all(
+      [...CASSETTE_PRELOAD_ASSETS, ...MOBILE_MODE_PRELOAD_ASSETS].map(
+        async (moduleId) => {
+        try {
+          const asset = Asset.fromModule(moduleId);
+          if (!asset.localUri) {
+            await asset.downloadAsync();
+          }
+        } catch {}
+        },
+      ),
+    );
+  }, []);
 
   const isRecording = recordStatus === STATUS.RECORDING;
   const todayKey = useMemo(() => toDateKey(now), [now]);
@@ -326,7 +379,7 @@ export default function RecordDoneScreen() {
     }
   }, []);
 
-  const startRecording = async () => {
+  const startRecording = useCallback(async () => {
     if (recordStatusRef.current === STATUS.RECORDING || flow !== FLOW.RECORD) {
       setIsRecordPressing(false);
       return;
@@ -357,7 +410,7 @@ export default function RecordDoneScreen() {
     setElapsedMs(0);
     setRecordStatus(STATUS.RECORDING);
     recordStatusRef.current = STATUS.RECORDING;
-  };
+  }, [flow, recorder, unloadSound]);
 
   const handleRecordPressOut = () => {
     setIsRecordPressing(false);
@@ -428,48 +481,164 @@ export default function RecordDoneScreen() {
     setIsProjectModalVisible(false);
   }, []);
 
-  const saveProject = useCallback(async () => {
-    const baseDate = lastRecordedAtMs ? new Date(lastRecordedAtMs) : new Date();
-    const fallbackName = `${baseDate.getFullYear()}/${baseDate.getMonth() + 1}/${baseDate.getDate()}`;
-    const normalized = projectName.trim() || fallbackName;
-    const recordedAtMs = lastRecordedAtMs ?? Date.now();
-    const defaultUnlockDate = new Date(recordedAtMs);
-    defaultUnlockDate.setFullYear(defaultUnlockDate.getFullYear() + 1);
-    const unlockAtMs = __DEV__
-      ? recordedAtMs + 60 * 1000
-      : defaultUnlockDate.getTime();
-
-    if (lastRecordedUri) {
-      await addCapsule({
-        id: `capsule-${recordedAtMs}-${Math.random().toString(36).slice(2, 8)}`,
-        title: normalized,
-        audioUri: lastRecordedUri,
-        durationSec: Math.max(1, Math.floor((elapsedMs || 1000) / 1000)),
-        recordedAtMs,
-        unlockAtMs,
-        openedAtMs: null,
-        hasTranscript: true,
-      });
-    }
-
-    setSavedProjectName(normalized);
-    setActiveTab("rec");
-    setIsProjectModalVisible(false);
-    setIsSaveComplete(true);
-  }, [elapsedMs, lastRecordedAtMs, lastRecordedUri, projectName]);
-
-  const saveProjectAndBack = useCallback(async () => {
+  const resetForNextRecording = useCallback(async () => {
     await unloadSound();
     setIsProjectModalVisible(false);
     setIsSaveComplete(false);
     setProjectName("");
+    setSavedProjectName("");
     setActiveTab("rec");
     setFlow(FLOW.RECORD);
     setRecordStatus(STATUS.IDLE);
     recordStatusRef.current = STATUS.IDLE;
     setIsRecordPressing(false);
     setElapsedMs(0);
+    setIsPlaying(false);
+    setPositionMillis(0);
+    setSliderMillis(0);
+    setDurationMillis(0);
+    setLastRecordedUri(null);
+    setLastRecordedAtMs(null);
   }, [unloadSound]);
+
+  const persistCurrentRecording = useCallback(async (
+    nameOverride?: string,
+  ): Promise<string | null> => {
+    const recordedAtMs = lastRecordedAtMs ?? Date.now();
+    const baseDate = new Date(recordedAtMs);
+    const fallbackName = `${baseDate.getFullYear()}/${baseDate.getMonth() + 1}/${baseDate.getDate()}`;
+    const normalized = (nameOverride ?? projectName).trim() || fallbackName;
+    const defaultUnlockDate = new Date(recordedAtMs);
+    defaultUnlockDate.setFullYear(defaultUnlockDate.getFullYear() + 1);
+    const unlockAtMs = __DEV__
+      ? recordedAtMs + DEV_UNLOCK_DELAY_MS
+      : defaultUnlockDate.getTime();
+    if (!lastRecordedUri) return null;
+
+    const savedCapsuleId = `capsule-${recordedAtMs}-${Math.random().toString(36).slice(2, 8)}`;
+    await addCapsule({
+      id: savedCapsuleId,
+      title: normalized,
+      audioUri: lastRecordedUri,
+      durationSec: Math.max(1, Math.floor((elapsedMs || 1000) / 1000)),
+      recordedAtMs,
+      unlockAtMs,
+      openedAtMs: null,
+      hasTranscript: true,
+    });
+
+    setSavedProjectName(normalized);
+    setActiveTab("rec");
+    setIsProjectModalVisible(false);
+    return savedCapsuleId;
+  }, [elapsedMs, lastRecordedAtMs, lastRecordedUri, projectName]);
+
+  const saveProject = useCallback(async () => {
+    const savedCapsuleId = await persistCurrentRecording();
+
+    if (savedCapsuleId) {
+      const shouldOpenCassetteFirst = await hardwareWS.waitUntilConnected(600);
+      if (shouldOpenCassetteFirst) {
+        await resetForNextRecording();
+        router.push({
+          pathname: "/cassette",
+          params: { capsuleId: savedCapsuleId, showArrivalIntro: "1" },
+        });
+        return;
+      }
+    }
+
+    setIsSaveComplete(true);
+  }, [
+    persistCurrentRecording,
+    resetForNextRecording,
+    router,
+  ]);
+
+  const saveProjectAndBack = useCallback(async () => {
+    await resetForNextRecording();
+  }, [resetForNextRecording]);
+
+  useEffect(() => {
+    hardwareWS.connect();
+
+    const unsub = hardwareWS.subscribe((s) => {
+      const prev = prevHardwareStateRef.current;
+      const recDown = s.rec && !prev.rec;
+      const recUp = !s.rec && prev.rec;
+      const stopDown = s.stop && !prev.stop;
+
+      if (recDown) {
+        if (isLockedToday) {
+          prevHardwareStateRef.current = s;
+          return;
+        }
+        setIsRecordPressing(true);
+        void startRecording();
+      }
+      if (recUp) {
+        setIsRecordPressing(false);
+        if (recordStatusRef.current !== STATUS.RECORDING) {
+          prevHardwareStateRef.current = s;
+          return;
+        }
+        void (async () => {
+          const result = await stopRecording();
+          if (result) {
+            const savedCapsuleId = await persistCurrentRecording();
+            if (savedCapsuleId) {
+              await resetForNextRecording();
+              router.push({
+                pathname: "/cassette",
+                params: { capsuleId: savedCapsuleId, showArrivalIntro: "1" },
+              });
+              return;
+            }
+            setFlow(FLOW.REVIEW);
+            return;
+          }
+          setRecordStatus(STATUS.IDLE);
+          recordStatusRef.current = STATUS.IDLE;
+        })();
+      }
+      if (stopDown) {
+        setIsRecordPressing(false);
+        if (recordStatusRef.current !== STATUS.RECORDING) {
+          prevHardwareStateRef.current = s;
+          return;
+        }
+        void (async () => {
+          const result = await stopRecording();
+          if (result) {
+            const savedCapsuleId = await persistCurrentRecording();
+            if (savedCapsuleId) {
+              await resetForNextRecording();
+              router.push({
+                pathname: "/cassette",
+                params: { capsuleId: savedCapsuleId, showArrivalIntro: "1" },
+              });
+              return;
+            }
+            setFlow(FLOW.REVIEW);
+            return;
+          }
+          setRecordStatus(STATUS.IDLE);
+          recordStatusRef.current = STATUS.IDLE;
+        })();
+      }
+
+      prevHardwareStateRef.current = s;
+    });
+
+    return unsub;
+  }, [
+    isLockedToday,
+    persistCurrentRecording,
+    resetForNextRecording,
+    router,
+    startRecording,
+    stopRecording,
+  ]);
 
   const retakeRecording = useCallback(async () => {
     setIsRecordPressing(false);
@@ -1022,6 +1191,14 @@ export default function RecordDoneScreen() {
     await persistDismissedNoticeIds();
     setUnlockNoticeCapsule(null);
     void refreshUnlockNotice();
+    const shouldOpenCassetteFirst = await hardwareWS.waitUntilConnected();
+    if (shouldOpenCassetteFirst) {
+      router.push({
+        pathname: "/cassette",
+        params: { capsuleId, showArrivalIntro: "1" },
+      });
+      return;
+    }
     router.push({
       pathname: "/record/kaihuu",
       params: { capsuleId, fromUnlockNotice: "1" },
@@ -1579,6 +1756,7 @@ export default function RecordDoneScreen() {
                   <Image
                     source={LETTER_BACKGROUND_IMAGE}
                     style={styles.unlockOverlayBackgroundImageFill}
+                    fadeDuration={0}
                     resizeMode="stretch"
                   />
                 </View>
@@ -1645,6 +1823,7 @@ export default function RecordDoneScreen() {
                           ],
                         },
                       ]}
+                      fadeDuration={0}
                       resizeMode="contain"
                     />
                   </Pressable>
@@ -2131,4 +2310,3 @@ const styles = StyleSheet.create({
     height: 98,
   },
 });
-

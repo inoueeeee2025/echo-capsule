@@ -1,5 +1,6 @@
 import PlayCircleSvg from "@/assets/images/Play_circle.svg";
 import TrashSvg from "@/assets/images/Trash.svg";
+import { hardwareWS } from "@/src/hardware/ws";
 import {
   loadCapsules,
   removeCapsule,
@@ -296,6 +297,14 @@ export default function ArchiveContent({
         if (item.isUnopened) {
           await updateCapsule(item.id, { openedAtMs: Date.now() });
           void reloadCapsules();
+        }
+        const shouldOpenCassetteFirst = await hardwareWS.waitUntilConnected();
+        if (shouldOpenCassetteFirst) {
+          router.push({
+            pathname: "/cassette",
+            params: { capsuleId: item.id },
+          });
+          return;
         }
         router.push({
           pathname: "/record/kaihuu",
