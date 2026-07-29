@@ -30,12 +30,14 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Dimensions,
   Easing,
   Image,
   ImageBackground,
   Keyboard,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -385,6 +387,10 @@ export default function RecordDoneScreen() {
       return { uri, recordedAtMs, durationMs: elapsed };
     } catch (error) {
       console.warn("[Record] stop failed:", error);
+      Alert.alert(
+        "録音を保存できませんでした",
+        "録音の停止に失敗しました。お手数ですが録り直してください。",
+      );
       return null;
     }
   }, []);
@@ -397,7 +403,19 @@ export default function RecordDoneScreen() {
 
     try {
       const { granted } = await requestRecordingPermissionsAsync();
-      if (!granted) return;
+      if (!granted) {
+        setIsRecordPressing(false);
+        console.warn("[Record] microphone permission denied");
+        Alert.alert(
+          "マイクを使用できません",
+          "録音するにはマイクへのアクセスを許可してください。",
+          [
+            { text: "閉じる", style: "cancel" },
+            { text: "設定を開く", onPress: () => void Linking.openSettings() },
+          ],
+        );
+        return;
+      }
 
       await unloadSound();
       await setAudioModeAsync({
@@ -412,6 +430,10 @@ export default function RecordDoneScreen() {
     } catch (error) {
       console.warn("[Record] start failed:", error);
       setIsRecordPressing(false);
+      Alert.alert(
+        "録音を開始できませんでした",
+        "もう一度お試しください。改善しない場合はアプリを再起動してください。",
+      );
       return;
     }
 
