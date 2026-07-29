@@ -457,7 +457,8 @@ export default function CassetteScreen() {
     [moveActiveCapsuleBy],
   );
 
-  const handleHardwarePlaybackChange = useCallback((next: boolean) => {
+  // 再生・停止の入口。ハードの PLAY ボタンと画面の再生ボタンの両方から呼ばれる。
+  const handlePlaybackChange = useCallback((next: boolean) => {
     shouldPlayFromHardwareRef.current = next;
     const player = playerRef.current;
     if (!player) {
@@ -466,6 +467,13 @@ export default function CassetteScreen() {
     }
     try {
       if (next) {
+        // 最後まで鳴らし終わった状態で押された場合、頭に戻さないと無反応になる
+        const status = player.currentStatus;
+        const duration = status?.duration ?? 0;
+        const currentTime = status?.currentTime ?? 0;
+        if (duration > 0 && currentTime >= duration - 0.25) {
+          void player.seekTo(0);
+        }
         player.play();
         setIsPlaying(true);
       } else {
@@ -486,7 +494,7 @@ export default function CassetteScreen() {
       const stopDown = s.stop && !prev.stop;
 
       if (playDown) {
-        handleHardwarePlaybackChange(true);
+        handlePlaybackChange(true);
       }
       if (recDown) {
         isRecPressedRef.current = true;
@@ -497,10 +505,10 @@ export default function CassetteScreen() {
         void stopCassetteRecording();
       }
       if (playUp) {
-        handleHardwarePlaybackChange(false);
+        handlePlaybackChange(false);
       }
       if (stopDown) {
-        handleHardwarePlaybackChange(false);
+        handlePlaybackChange(false);
         moveActiveCapsuleBy(1);
       }
 
@@ -508,7 +516,7 @@ export default function CassetteScreen() {
     });
     return unsub;
   }, [
-    handleHardwarePlaybackChange,
+    handlePlaybackChange,
     moveActiveCapsuleBy,
     startCassetteRecording,
     stopCassetteRecording,
@@ -805,6 +813,35 @@ export default function CassetteScreen() {
               ]}
             />
           </Pressable>
+          {/*
+            ハードが繋がっていないときの唯一の再生手段。
+            以前は 1x1px の不可視領域を長押しする作りで、事実上再生できなかった。
+          */}
+          <Pressable
+            onPress={() => handlePlaybackChange(!isPlaying)}
+            style={[
+              styles.bottomAction,
+              { width: 110 * uiScale },
+              !canPlay && styles.bottomActionDisabled,
+            ]}
+            disabled={!canPlay}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={isPlaying ? "再生を止める" : "再生する"}
+          >
+            <Image
+              source={
+                isPlaying
+                  ? require("../assets/images/stopButton.png")
+                  : require("../assets/images/saiseiButton.png")
+              }
+              resizeMode="contain"
+              style={[
+                styles.bottomButtonImage,
+                { width: 60 * uiScale, height: 60 * uiScale },
+              ]}
+            />
+          </Pressable>
           <Pressable
             onPress={() =>
               router.replace({
@@ -826,13 +863,6 @@ export default function CassetteScreen() {
           </Pressable>
         </View>
 
-        <Pressable
-          onLongPress={() => handleHardwarePlaybackChange(!isPlaying)}
-          delayLongPress={700}
-          style={styles.devPlaybackToggleZone}
-          disabled={!canPlay}
-          hitSlop={16}
-        />
         {showArrivalIntro ? (
           <Animated.View
             pointerEvents="none"
@@ -908,6 +938,9 @@ const styles = StyleSheet.create({
   bottomAction: {
     alignItems: "center",
   },
+  bottomActionDisabled: {
+    opacity: 0.35,
+  },
   backAction: {
     marginLeft: 8,
   },
@@ -928,15 +961,6 @@ const styles = StyleSheet.create({
   bottomButtonImage: {
     width: 60,
     height: 60,
-  },
-  devPlaybackToggleZone: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: 1,
-    height: 1,
-    opacity: 0,
-    zIndex: 99,
   },
   arrivalIntroOverlay: {
     position: "absolute",
