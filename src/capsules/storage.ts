@@ -10,6 +10,11 @@ export type CapsuleRecord = {
   recordedAtMs: number;
   unlockAtMs: number;
   openedAtMs: number | null;
+  /**
+   * 文字起こしを持つか。
+   * 文字起こし機能は今回スコープ外なので、常に false が入る。
+   * 保存済みデータとの互換のためフィールドは残してある。
+   */
   hasTranscript: boolean;
 };
 

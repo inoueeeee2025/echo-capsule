@@ -1,4 +1,4 @@
-﻿import ArchiveContent from "@/components/ArchiveContent";
+import ArchiveContent from "@/components/ArchiveContent";
 import RecordToolbar from "@/components/RecordToolbar";
 import { loadCapsules } from "@/src/capsules/storage";
 import { useFocusEffect } from "@react-navigation/native";
@@ -23,7 +23,6 @@ import {
   Image,
   ImageBackground,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -40,7 +39,6 @@ const INITIAL_SLIDE_WIDTH = 360;
 const NOREC_BUTTON_NUDGE_Y = -20;
 const REC_BUTTON_ALIGN_OFFSET_Y = -5;
 const RECORDED_DATE_STORAGE_KEY = "recordedDateKey";
-const TEXT_BOARD_IMAGE = require("../../assets/images/textBoard.png");
 const TAB_SWIPE_THRESHOLD = 28;
 const ARRIVAL_INTRO_SLIDE_MS = 420;
 const ARRIVAL_INTRO_HOLD_MS = 900;
@@ -77,7 +75,6 @@ function formatMillis(millis: number): string {
 
 export default function KaihuuScreen() {
   const params = useLocalSearchParams<{
-    mode?: string;
     capsuleId?: string;
     transcriptId?: string;
     fromUnlockNotice?: string;
@@ -88,12 +85,10 @@ export default function KaihuuScreen() {
     YDWbananaslipplus: require("../../assets/fonts/YDWbananaslipplus.otf"),
     ZenAntiqueSoft_400Regular,
   });
-  const ydwLoaded = fontsLoaded;
   const zenAntiqueSoftLoaded = fontsLoaded;
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"rec" | "archive">("archive");
   const [toolbarTab, setToolbarTab] = useState<"rec" | "archive">("archive");
-  const [isTextMode, setIsTextMode] = useState(false);
   const [showMainArchive, setShowMainArchive] = useState(false);
   const [archiveSettledToMain, setArchiveSettledToMain] = useState(false);
   const [hasUnopenedInArchive, setHasUnopenedInArchive] = useState(false);
@@ -110,8 +105,6 @@ export default function KaihuuScreen() {
   const [isSelectedCapsuleLocked, setIsSelectedCapsuleLocked] = useState(false);
   const [slideWidth, setSlideWidth] = useState(INITIAL_SLIDE_WIDTH);
   const [recordedDateKey, setRecordedDateKey] = useState<string | null>(null);
-  const [line1Width, setLine1Width] = useState(0);
-  const [line2Width, setLine2Width] = useState(0);
   const [activeCapsuleTitle, setActiveCapsuleTitle] = useState("");
   const [activeCapsuleRecordedAtMs, setActiveCapsuleRecordedAtMs] = useState<
     number | null
@@ -352,9 +345,6 @@ export default function KaihuuScreen() {
   const isLockedToday = false;
   const recGuideText = "録音ボタンを押して録音しましょう";
 
-  const transcriptLine1 = "こんにちはー";
-  const transcriptLine2 = "おはようございますー";
-  const ydwStyle = ydwLoaded ? styles.ydwBananaslipPlus : undefined;
 
   const switchToRecTab = useCallback(() => {
     setToolbarTab("rec");
@@ -408,21 +398,6 @@ export default function KaihuuScreen() {
       AsyncStorage.removeItem(RECORDED_DATE_STORAGE_KEY).catch(() => {});
     }
   }, [recordedDateKey, todayKey]);
-
-  useEffect(() => {
-    if (params.mode !== "text") return;
-    setToolbarTab("archive");
-    setActiveTab("archive");
-    setShowMainArchive(false);
-    setArchiveSettledToMain(false);
-    setIsTextMode(true);
-  }, [params.mode]);
-
-  useEffect(() => {
-    const resolved = Image.resolveAssetSource(TEXT_BOARD_IMAGE);
-    if (!resolved?.uri) return;
-    Image.prefetch(resolved.uri).catch(() => {});
-  }, []);
 
   useEffect(() => {
     setIsAudioActiveAsync(true).catch(() => {});
@@ -634,13 +609,6 @@ export default function KaihuuScreen() {
                     <ArchiveContent
                       embedded
                       onPressRec={switchToRecTab}
-                      onPressTranscript={() => {
-                        setToolbarTab("archive");
-                        setActiveTab("archive");
-                        setShowMainArchive(false);
-                        setArchiveSettledToMain(false);
-                        setIsTextMode(true);
-                      }}
                     />
                   ) : (
                     <View style={styles.recWrap}>
@@ -648,66 +616,6 @@ export default function KaihuuScreen() {
                         {formatDisplayDate(new Date())}
                       </Text>
 
-                      {isTextMode ? (
-                        <>
-                          <ImageBackground
-                            source={TEXT_BOARD_IMAGE}
-                            resizeMode="stretch"
-                            style={styles.paperCard}
-                          >
-                            <ScrollView
-                              style={styles.paperScroll}
-                              contentContainerStyle={styles.paperScrollContent}
-                              showsVerticalScrollIndicator={false}
-                            >
-                              <Text
-                                style={[styles.lineText, ydwStyle]}
-                                onTextLayout={(e) => {
-                                  const w =
-                                    e.nativeEvent.lines?.[0]?.width ?? 0;
-                                  if (w > 0) setLine1Width(w);
-                                }}
-                              >
-                                {transcriptLine1}
-                              </Text>
-                              <View
-                                style={[
-                                  styles.line,
-                                  { width: Math.max(1, (line1Width || 1) - 2) },
-                                ]}
-                              />
-                              <Text
-                                style={[
-                                  styles.lineText,
-                                  styles.secondLineText,
-                                  ydwStyle,
-                                ]}
-                                onTextLayout={(e) => {
-                                  const w =
-                                    e.nativeEvent.lines?.[0]?.width ?? 0;
-                                  if (w > 0) setLine2Width(w);
-                                }}
-                              >
-                                {transcriptLine2}
-                              </Text>
-                              <View
-                                style={[
-                                  styles.lineWide,
-                                  { width: Math.max(1, (line2Width || 1) - 2) },
-                                ]}
-                              />
-                            </ScrollView>
-                          </ImageBackground>
-                          <Pressable
-                            style={styles.audioModeLink}
-                            onPress={() => setIsTextMode(false)}
-                          >
-                            <Text style={styles.audioModeLinkText}>
-                              音声モードへ
-                            </Text>
-                          </Pressable>
-                        </>
-                      ) : (
                         <>
                           <View style={styles.centerArea}>
                             <Pressable
@@ -792,17 +700,8 @@ export default function KaihuuScreen() {
                               </View>
                             </View>
 
-                            <Pressable
-                              style={styles.textModeLink}
-                              onPress={() => setIsTextMode(true)}
-                            >
-                              <Text style={styles.textModeLinkText}>
-                                テキストモードへ
-                              </Text>
-                            </Pressable>
                           </View>
                         </>
-                      )}
                     </View>
                   )}
                 </View>
@@ -958,30 +857,6 @@ const styles = StyleSheet.create({
     zIndex: 3,
     elevation: 3,
   },
-  audioModeLink: {
-    alignSelf: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-  },
-  audioModeLinkText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#767680",
-    letterSpacing: 0.2,
-    bottom: -25,
-  },
-  textModeLink: {
-    alignSelf: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-  },
-  textModeLinkText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#767680",
-    letterSpacing: 0.2,
-    bottom: -40,
-  },
   recGuideText: {
     textAlign: "center",
     fontSize: 12,
@@ -990,48 +865,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     lineHeight: 24,
     marginBottom: 84,
-  },
-  paperCard: {
-    marginTop: 56,
-    width: 312,
-    height: 449,
-    flex: 1,
-    maxHeight: 470,
-    elevation: 3,
-    paddingTop: 30,
-    paddingHorizontal: 26,
-    alignSelf: "center",
-  },
-  paperScroll: {
-    flex: 1,
-  },
-  paperScrollContent: {
-    paddingBottom: 8,
-  },
-  lineText: {
-    fontSize: 20,
-    lineHeight: 26,
-    color: "#242428",
-    letterSpacing: 0.3,
-    alignSelf: "flex-start",
-  },
-  secondLineText: {
-    marginTop: 20,
-  },
-  line: {
-    marginTop: 3,
-    width: 142,
-    height: 2,
-    backgroundColor: "#3a3a3f",
-  },
-  lineWide: {
-    marginTop: 3,
-    width: 240,
-    height: 2,
-    backgroundColor: "#3a3a3f",
-  },
-  ydwBananaslipPlus: {
-    fontFamily: "YDWbananaslipplus",
   },
 
   arrivalIntroOverlay: {

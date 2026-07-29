@@ -1,4 +1,4 @@
-﻿import PushAppBaseSvg from "@/assets/images/pushAppBase.svg";
+import PushAppBaseSvg from "@/assets/images/pushAppBase.svg";
 import TouchSvg from "@/assets/images/touch.svg";
 import ArchiveContent from "@/components/ArchiveContent";
 import RecordToolbar from "@/components/RecordToolbar";
@@ -102,7 +102,6 @@ const MOBILE_MODE_PRELOAD_ASSETS = [
   require("../../assets/images/Segmented_active.png"),
   require("../../assets/images/letter.png"),
   require("../../assets/images/letter_background.png"),
-  require("../../assets/images/textBoard.png"),
   require("../../assets/images/norec_background.png"),
   require("../../assets/images/home.png"),
   require("../../assets/images/kaihuu_background.png"),
@@ -250,7 +249,6 @@ export default function RecordDoneScreen() {
     // where Metro may no longer be reachable.
     void import("../cassette");
     void import("./kaihuu");
-    void import("./kaihuu-text");
     void Promise.all(
       [...CASSETTE_PRELOAD_ASSETS, ...MOBILE_MODE_PRELOAD_ASSETS].map(
         async (moduleId) => {
@@ -602,7 +600,7 @@ export default function RecordDoneScreen() {
       recordedAtMs,
       unlockAtMs,
       openedAtMs: null,
-      hasTranscript: true,
+      hasTranscript: false,
     });
 
     setSavedProjectName(normalized);

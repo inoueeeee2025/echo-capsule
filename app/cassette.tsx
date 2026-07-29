@@ -1,4 +1,4 @@
-﻿import { addCapsule, loadCapsules } from "@/src/capsules/storage";
+import { addCapsule, loadCapsules } from "@/src/capsules/storage";
 import { hardwareWS, type HardwareState } from "@/src/hardware/ws";
 import {
   computeUnlockAtMs,
@@ -310,7 +310,7 @@ export default function CassetteScreen() {
         recordedAtMs,
         unlockAtMs,
         openedAtMs: null,
-        hasTranscript: true,
+        hasTranscript: false,
       });
       scheduleLatestCapsuleRefresh();
       return uri;
