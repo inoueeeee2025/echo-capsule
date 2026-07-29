@@ -457,8 +457,8 @@ export default function CassetteScreen() {
     [moveActiveCapsuleBy],
   );
 
-  // 再生・停止の入口。ハードの PLAY ボタンと画面の再生ボタンの両方から呼ばれる。
-  const handlePlaybackChange = useCallback((next: boolean) => {
+  // ハードの PLAY / STOP ボタンから呼ばれる再生・停止の入口。
+  const handleHardwarePlaybackChange = useCallback((next: boolean) => {
     shouldPlayFromHardwareRef.current = next;
     const player = playerRef.current;
     if (!player) {
@@ -494,7 +494,7 @@ export default function CassetteScreen() {
       const stopDown = s.stop && !prev.stop;
 
       if (playDown) {
-        handlePlaybackChange(true);
+        handleHardwarePlaybackChange(true);
       }
       if (recDown) {
         isRecPressedRef.current = true;
@@ -505,10 +505,10 @@ export default function CassetteScreen() {
         void stopCassetteRecording();
       }
       if (playUp) {
-        handlePlaybackChange(false);
+        handleHardwarePlaybackChange(false);
       }
       if (stopDown) {
-        handlePlaybackChange(false);
+        handleHardwarePlaybackChange(false);
         moveActiveCapsuleBy(1);
       }
 
@@ -516,7 +516,7 @@ export default function CassetteScreen() {
     });
     return unsub;
   }, [
-    handlePlaybackChange,
+    handleHardwarePlaybackChange,
     moveActiveCapsuleBy,
     startCassetteRecording,
     stopCassetteRecording,
@@ -716,7 +716,6 @@ export default function CassetteScreen() {
     inputRange: [0, 1],
     outputRange: ["0deg", "-360deg"],
   });
-  const canPlay = useMemo(() => !!audioUri, [audioUri]);
   const showArrivalIntro = isArrivalIntroVisible;
 
   return (
@@ -806,35 +805,6 @@ export default function CassetteScreen() {
           >
             <Image
               source={require("../assets/images/backButton.png")}
-              resizeMode="contain"
-              style={[
-                styles.bottomButtonImage,
-                { width: 60 * uiScale, height: 60 * uiScale },
-              ]}
-            />
-          </Pressable>
-          {/*
-            ハードが繋がっていないときの唯一の再生手段。
-            以前は 1x1px の不可視領域を長押しする作りで、事実上再生できなかった。
-          */}
-          <Pressable
-            onPress={() => handlePlaybackChange(!isPlaying)}
-            style={[
-              styles.bottomAction,
-              { width: 110 * uiScale },
-              !canPlay && styles.bottomActionDisabled,
-            ]}
-            disabled={!canPlay}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={isPlaying ? "再生を止める" : "再生する"}
-          >
-            <Image
-              source={
-                isPlaying
-                  ? require("../assets/images/stopButton.png")
-                  : require("../assets/images/saiseiButton.png")
-              }
               resizeMode="contain"
               style={[
                 styles.bottomButtonImage,
@@ -937,9 +907,6 @@ const styles = StyleSheet.create({
   },
   bottomAction: {
     alignItems: "center",
-  },
-  bottomActionDisabled: {
-    opacity: 0.35,
   },
   backAction: {
     marginLeft: 8,
