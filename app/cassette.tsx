@@ -1,6 +1,11 @@
 ﻿import { addCapsule, loadCapsules } from "@/src/capsules/storage";
 import { hardwareWS, type HardwareState } from "@/src/hardware/ws";
 import {
+  computeUnlockAtMs,
+  DEMO_MODE,
+  DEMO_UNLOCK_DELAY_MS,
+} from "@/src/config";
+import {
   createAudioPlayer,
   RecordingPresets,
   requestRecordingPermissionsAsync,
@@ -48,10 +53,10 @@ const ARRIVAL_INTRO_SLIDE_MS = 420;
 const ARRIVAL_INTRO_HOLD_MS = 900;
 const ARRIVAL_INTRO_FADE_OUT_MS = 420;
 const ARRIVAL_INTRO_SLIDE_DISTANCE_RATIO = 0.36;
-const FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD = __DEV__;
+// カプセルが未確定の状態でも登場演出を出すか。デモでは常に見せたいので DEMO_MODE に従う。
+const FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD = DEMO_MODE;
 const PROJECT_SWIPE_THRESHOLD = 28;
 const PROJECT_SLIDE_TRANSITION_MS = 180;
-const DEV_UNLOCK_DELAY_MS = 30 * 1000;
 const AnimatedImageBackground = Animated.createAnimatedComponent(ImageBackground);
 
 type PlayableCapsule = {
@@ -210,14 +215,18 @@ export default function CassetteScreen() {
     });
   }, [requestedCapsuleId]);
 
+  // 録音したカプセルが開封可能になった頃に一覧を取り直す。
+  // 本番の待ち時間（1年）では setTimeout の上限を超えるうえ意味がないので、
+  // デモ中だけ動かす。
   const scheduleLatestCapsuleRefresh = useCallback(() => {
+    if (!DEMO_MODE) return;
     clearRecordingTimeout();
     recordingTimeoutRef.current = setTimeout(() => {
       void (async () => {
         await refreshPlayableCapsule();
         setActiveCapsuleIndex(0);
       })();
-    }, DEV_UNLOCK_DELAY_MS + 300);
+    }, DEMO_UNLOCK_DELAY_MS + 300);
   }, [clearRecordingTimeout, refreshPlayableCapsule]);
 
   useEffect(() => {
@@ -248,13 +257,7 @@ export default function CassetteScreen() {
       if (!uri) return null;
 
       const recordedAtMs = Date.now();
-      const unlockAtMs = __DEV__
-        ? recordedAtMs + DEV_UNLOCK_DELAY_MS
-        : (() => {
-            const defaultUnlockDate = new Date(recordedAtMs);
-            defaultUnlockDate.setFullYear(defaultUnlockDate.getFullYear() + 1);
-            return defaultUnlockDate.getTime();
-          })();
+      const unlockAtMs = computeUnlockAtMs(recordedAtMs);
       const title = `${new Date(recordedAtMs).getFullYear()}/${String(new Date(recordedAtMs).getMonth() + 1).padStart(2, "0")}/${String(new Date(recordedAtMs).getDate()).padStart(2, "0")}`;
       const durationSec = Math.max(
         1,

@@ -48,6 +48,7 @@ import {
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { hardwareWS, type HardwareState } from "@/src/hardware/ws";
+import { computeUnlockAtMs } from "@/src/config";
 
 const STATUS = {
   IDLE: "idle",
@@ -85,7 +86,6 @@ const PUSH_NOTICE_SLIDE_DURATION_MS = 340;
 const PUSH_NOTICE_VISIBLE_MS = 8000;
 const PUSH_NOTICE_SOUND_CLEANUP_MS = 1200;
 const PUSH_NOTICE_SOUND_FILE = require("../../assets/soun/決定ボタンを押す40.mp3");
-const DEV_UNLOCK_DELAY_MS = 30 * 1000;
 const CASSETTE_PRELOAD_ASSETS = [
   require("../../assets/images/cassette_background.png"),
   require("../../assets/images/leftwheel.png"),
@@ -508,11 +508,7 @@ export default function RecordDoneScreen() {
     const baseDate = new Date(recordedAtMs);
     const fallbackName = `${baseDate.getFullYear()}/${baseDate.getMonth() + 1}/${baseDate.getDate()}`;
     const normalized = (nameOverride ?? projectName).trim() || fallbackName;
-    const defaultUnlockDate = new Date(recordedAtMs);
-    defaultUnlockDate.setFullYear(defaultUnlockDate.getFullYear() + 1);
-    const unlockAtMs = __DEV__
-      ? recordedAtMs + DEV_UNLOCK_DELAY_MS
-      : defaultUnlockDate.getTime();
+    const unlockAtMs = computeUnlockAtMs(recordedAtMs);
     if (!lastRecordedUri) return null;
 
     const savedCapsuleId = `capsule-${recordedAtMs}-${Math.random().toString(36).slice(2, 8)}`;

@@ -12,7 +12,11 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.yuri1234567.echocapsule",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocalNetworkUsageDescription": "カセット本体と接続するためにローカルネットワークを使用します。",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
       }
     },
     "android": {
@@ -40,6 +44,20 @@
           "backgroundColor": "#ffffff",
           "dark": {
             "backgroundColor": "#000000"
+          }
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "声を録音してカプセルに保存するためにマイクを使用します。"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
           }
         }
       ]

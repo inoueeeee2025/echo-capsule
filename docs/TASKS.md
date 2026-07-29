@@ -23,7 +23,13 @@
 
 コード変更ゼロ。設定ファイルのみ。**最も安全で、最も効果が大きい。**
 
-### A-1. マイク権限を Info.plist / AndroidManifest に入れる ⏱ 30分
+### ✅ A-1. マイク権限を Info.plist / AndroidManifest に入れる ⏱ 30分
+
+> **完了。** `app.json` の `plugins` に `expo-audio` を追加。
+> `npx expo config --type introspect` で `NSMicrophoneUsageDescription` と
+> `android.permission.RECORD_AUDIO` が入ることを確認済み。
+> iOS の `infoPlist` は mod で書き換わるため、確認には `--type prebuild` ではなく
+> **`--type introspect` を使うこと**（prebuild では反映前の値しか見えない）。
 
 `app.json` の `plugins` に `expo-audio` を追加する。現状これが無いため、
 EAS build した瞬間に **iOS は権限要求でクラッシュ、Android は録音失敗**する。
@@ -36,7 +42,13 @@ EAS build した瞬間に **iOS は権限要求でクラッシュ、Android は�
   ```
   で文言が出ること。Android 側は `android.permission.RECORD_AUDIO` が permissions に入ること。
 
-### A-2. ハードWi-Fi接続のための通信設定を入れる ⏱ 30分
+### ✅ A-2. ハードWi-Fi接続のための通信設定を入れる ⏱ 30分
+
+> **完了。** iOS は `NSAllowsLocalNetworking` と `NSLocalNetworkUsageDescription` を追加し、
+> `introspect` で反映を確認済み。
+> Android は `expo-build-properties` を導入して `usesCleartextTraffic: true` を設定。
+> ただし **Android マニフェストは `introspect` の対象外**のため、
+> 実際の反映確認はビルド時になる。
 
 平文の `ws://192.168.46.1/ws` は iOS のリリースビルドで ATS にブロックされる。
 Android も API 28 以降は平文通信が既定で拒否。加えて iOS 14+ はローカルネットワーク接続に
@@ -50,7 +62,14 @@ Android も API 28 以降は平文通信が既定で拒否。加えて iOS 14+ �
 - **完了条件**：`npx expo config --type prebuild --json` に3項目が出ること。
   実機確認は Day 5 のリハーサルで `/dev` 画面を使って行う。
 
-### A-3. 開封待ち時間を `__DEV__` から切り出す ⏱ 30分
+### ✅ A-3. 開封待ち時間を `__DEV__` から切り出す ⏱ 30分
+
+> **完了。** `src/config.ts` を新設し、`DEMO_MODE` / `DEMO_UNLOCK_DELAY_MS` /
+> `computeUnlockAtMs()` を定義。rec・cassette の両方から参照するようにした。
+> **待ち時間を変えるときは `src/config.ts` の1箇所だけ**を直せばよい。
+> `cassette.tsx` の `FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD` も `DEMO_MODE` に寄せた（D-5 の一部を先行）。
+> `scheduleLatestCapsuleRefresh` は本番の待ち時間だと `setTimeout` の上限を超えるため
+> `DEMO_MODE` のときだけ動くようにガードしてある。
 
 現状 `__DEV__ ? 30秒 : 1年` のハードコードが2箇所にあり、
 **本番ビルドすると30秒デモが一切再現できない**。実行形態が未定なので、ここは必須。
@@ -312,7 +331,7 @@ A-1〜A-3 が終わっていれば、どちらでも動く。リハーサルの�
 ## 進捗チェックリスト
 
 ```
-Day 1  [ ] A-1 マイク権限         [ ] A-2 通信設定        [ ] A-3 待ち時間の切り出し
+Day 1  [x] A-1 マイク権限         [x] A-2 通信設定        [x] A-3 待ち時間の切り出し
        [ ] B-1 ハード録音の保存バグ 🔴
 
 Day 2  [ ] B-2 録音の競合状態 🔴   [ ] B-3 カセット側の競合+上限
