@@ -1,4 +1,6 @@
+import CassetteButtonSvg from "@/assets/images/cassetteButton.svg";
 import PushAppBaseSvg from "@/assets/images/pushAppBase.svg";
+import SmartphoneBackSvg from "@/assets/images/smartphoneBack.svg";
 import TouchSvg from "@/assets/images/touch.svg";
 import ArchiveContent from "@/components/ArchiveContent";
 import RecordToolbar from "@/components/RecordToolbar";
@@ -42,6 +44,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -84,6 +87,8 @@ const LETTER_BACKGROUND_IMAGE = require("../../assets/images/letter_background.p
 const RECORDED_DATE_STORAGE_KEY = "recordedDateKey";
 const DISMISSED_NOTICE_IDS_STORAGE_KEY = "dismissedUnlockNoticeIds";
 const TAB_SWIPE_THRESHOLD = 28;
+const CASSETTE_FLIP_OUT_DURATION_MS = 190;
+const CASSETTE_FLIP_IN_DURATION_MS = 230;
 const PUSH_NOTICE_SLIDE_DURATION_MS = 340;
 const PUSH_NOTICE_VISIBLE_MS = 8000;
 const PUSH_NOTICE_SOUND_CLEANUP_MS = 1200;
@@ -194,8 +199,15 @@ export default function RecordDoneScreen() {
   const [slideWidth, setSlideWidth] = useState(SCREEN_WIDTH);
   const [isDismissedNoticeIdsReady, setIsDismissedNoticeIdsReady] =
     useState(false);
+  // ハードとのペアリング案内を出しているか
+  const [isCassetteConnectPromptVisible, setIsCassetteConnectPromptVisible] =
+    useState(false);
+  const [isCassetteFlipAnimating, setIsCassetteFlipAnimating] = useState(false);
+  // ハードの Wi-Fi に繋がっているか。hardwareWS の接続状態をそのまま反映する
+  const [isHardwareWifiConnected, setIsHardwareWifiConnected] = useState(false);
 
   const pulse = useRef(new Animated.Value(1)).current;
+  const cassetteFlip = useRef(new Animated.Value(0)).current;
   const saveReveal = useRef(new Animated.Value(0)).current;
   const unlockOverlayOpacity = useRef(new Animated.Value(0)).current;
   const unlockOverlayContentTranslateY = useRef(new Animated.Value(44)).current;
@@ -928,6 +940,24 @@ export default function RecordDoneScreen() {
     };
   }, [stopPushNoticeSound, unloadSound]);
 
+  // ペアリング案内の出し入れを、カセットが裏返るように見せるための補間
+  const cassetteFlipOpacity = cassetteFlip.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: [0, 1, 0],
+  });
+  const cassetteFlipScale = cassetteFlip.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: [0.94, 1, 0.94],
+  });
+  const cassetteFlipRotateY = cassetteFlip.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: ["-70deg", "0deg", "70deg"],
+  });
+  const cassetteFlipTranslateX = cassetteFlip.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: [-40, 0, 40],
+  });
+
   const currentSliderValue = isSliding ? sliderMillis : positionMillis;
   const isRecordVisualActive =
     flow === FLOW.RECORD &&
@@ -1273,6 +1303,95 @@ export default function RecordDoneScreen() {
     unlockNoticeCapsule,
   ]);
 
+  // ハードの Wi-Fi 接続状態を hardwareWS から受け取る。
+  // 移植元のペアリング画面は rec.tsx 内に WebSocket を自前で持っていたが、
+  // それだと同じデバイスに接続が2本張られるため、共有の hardwareWS に寄せている。
+  useEffect(() => {
+    setIsHardwareWifiConnected(hardwareWS.isConnected());
+    return hardwareWS.subscribeConnection(setIsHardwareWifiConnected);
+  }, []);
+
+  // 端末の Wi-Fi 設定を開く。iOS は設定アプリへの URL スキームが
+  // バージョンで揺れるため、通る可能性のあるものを順に試す。
+  const openWifiSettings = useCallback(async () => {
+    const tryOpenUrl = async (url: string): Promise<boolean> => {
+      try {
+        const canOpen = await Linking.canOpenURL(url).catch(() => true);
+        if (canOpen === false) return false;
+        await Linking.openURL(url);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    try {
+      if (Platform.OS === "android") {
+        await Linking.sendIntent("android.settings.WIFI_SETTINGS");
+        return;
+      }
+      if (Platform.OS === "ios") {
+        const opened =
+          (await tryOpenUrl("App-Prefs:WIFI")) ||
+          (await tryOpenUrl("App-Prefs:root=WIFI")) ||
+          (await tryOpenUrl("prefs:root=WIFI")) ||
+          (await tryOpenUrl("App-Prefs:"));
+        if (opened) return;
+      }
+      await Linking.openSettings();
+    } catch {
+      Alert.alert(
+        "設定を開けませんでした",
+        "端末の「設定」から Wi-Fi を開いて、_echocapsule_dev を選んでください。",
+      );
+    }
+  }, []);
+
+  const openCassetteMode = useCallback(() => {
+    router.push("/cassette");
+  }, [router]);
+
+  // ペアリング案内の出し入れ。カセットが裏返るような演出で切り替える。
+  const transitionCassetteConnectPrompt = useCallback(
+    (nextVisible: boolean) => {
+      if (isCassetteFlipAnimating) return;
+      if (isCassetteConnectPromptVisible === nextVisible) return;
+
+      setIsCassetteFlipAnimating(true);
+      const outDirection = nextVisible ? 1 : -1;
+
+      Animated.timing(cassetteFlip, {
+        toValue: outDirection,
+        duration: CASSETTE_FLIP_OUT_DURATION_MS,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }).start(() => {
+        setIsCassetteConnectPromptVisible(nextVisible);
+        cassetteFlip.setValue(-outDirection);
+        Animated.timing(cassetteFlip, {
+          toValue: 0,
+          duration: CASSETTE_FLIP_IN_DURATION_MS,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }).start(() => {
+          setIsCassetteFlipAnimating(false);
+        });
+      });
+    },
+    [cassetteFlip, isCassetteConnectPromptVisible, isCassetteFlipAnimating],
+  );
+
+  // 案内を出している最中に接続できたら、案内を引っ込める。
+  // 「繋いでください」と言い続けないための処理。
+  useEffect(() => {
+    if (!isHardwareWifiConnected || !isCassetteConnectPromptVisible) return;
+    transitionCassetteConnectPrompt(false);
+  }, [
+    isCassetteConnectPromptVisible,
+    isHardwareWifiConnected,
+    transitionCassetteConnectPrompt,
+  ]);
+
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
@@ -1430,214 +1549,334 @@ export default function RecordDoneScreen() {
                   </View>
                 </Animated.View>
               ) : null}
-              <View style={styles.topArea}>
-                {flow === FLOW.REVIEW && activeTab === "rec" ? (
-                  <View style={styles.retakeTopRow}>
-                    <Pressable
-                      onPress={retakeRecording}
-                      hitSlop={10}
-                      style={styles.retakeTopButton}
-                    >
-                      <Text style={styles.retakeTopLabel}>撮り直す</Text>
-                      <Text style={styles.retakeTopArrow}>←</Text>
-                    </Pressable>
-                  </View>
-                ) : null}
-
-                <RecordToolbar
-                  active={activeTab}
-                  onPressRec={() => setActiveTab("rec")}
-                  onPressArchive={() => setActiveTab("archive")}
-                  hasUnopenedInArchive={hasUnopenedInArchive}
+              {isCassetteConnectPromptVisible ? (
+                <View
+                  pointerEvents="none"
+                  style={[styles.dimLayer, styles.dimLayerForSaveComplete]}
                 />
-              </View>
+              ) : null}
 
-              <View
-                style={styles.slideViewport}
-                onLayout={(e) => setSlideWidth(e.nativeEvent.layout.width)}
+              <Animated.View
+                pointerEvents={isCassetteFlipAnimating ? "none" : "auto"}
+                style={[
+                  styles.cassetteFlipLayer,
+                  {
+                    opacity: cassetteFlipOpacity,
+                    transform: [
+                      { perspective: 1200 },
+                      { translateX: cassetteFlipTranslateX },
+                      { rotateY: cassetteFlipRotateY },
+                      { scale: cassetteFlipScale },
+                    ],
+                  },
+                ]}
               >
-                <Animated.View
-                  style={[
-                    styles.slideTrack,
-                    { width: slideWidth * 2 },
-                    {
-                      transform: [{ translateX: slideX }],
-                    },
-                  ]}
-                >
-                  <View style={[styles.slidePane, { width: slideWidth }]}>
-                    <Text style={styles.dateText}>
-                      {formatDisplayDate(now)}
-                    </Text>
+                <View style={styles.topArea}>
+                  {/*
+                    カセットモードへの入口。
+                    未接続ならペアリング案内へ、接続済みならそのままカセットモードへ。
+                    スマホを筐体に入れる前にカセットモードにしておくのが想定の流れ。
+                  */}
+                  {flow === FLOW.RECORD &&
+                  activeTab === "rec" &&
+                  !isCassetteConnectPromptVisible ? (
+                    <Pressable
+                      onPress={() => {
+                        if (isHardwareWifiConnected) {
+                          openCassetteMode();
+                        } else {
+                          transitionCassetteConnectPrompt(true);
+                        }
+                      }}
+                      hitSlop={10}
+                      style={styles.cassetteTopButton}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        isHardwareWifiConnected
+                          ? "カセットモードへ"
+                          : "カセットレコーダーと接続する"
+                      }
+                    >
+                      <CassetteButtonSvg
+                        width={styles.cassetteTopButtonIcon.width}
+                        height={styles.cassetteTopButtonIcon.height}
+                        style={styles.cassetteTopButtonIcon}
+                      />
+                    </Pressable>
+                  ) : null}
 
-                    <View style={styles.centerArea}>
-                      {flow === FLOW.RECORD ? (
-                        <View style={styles.flowLayer}>
-                          <View
-                            style={[
-                              styles.recordGroup,
-                              { marginTop: RECORD_BUTTON_OFFSET_Y },
-                            ]}
-                          >
-                            <Animated.View
+                  {flow === FLOW.RECORD &&
+                  activeTab === "rec" &&
+                  isCassetteConnectPromptVisible ? (
+                    <Pressable
+                      onPress={() => transitionCassetteConnectPrompt(false)}
+                      hitSlop={10}
+                      style={styles.smartphoneTopButton}
+                      accessibilityRole="button"
+                      accessibilityLabel="録音画面に戻る"
+                    >
+                      <SmartphoneBackSvg
+                        width={styles.smartphoneTopButtonBg.width}
+                        height={styles.smartphoneTopButtonBg.height}
+                        style={styles.smartphoneTopButtonBg}
+                      />
+                    </Pressable>
+                  ) : null}
+
+                  {flow === FLOW.REVIEW && activeTab === "rec" ? (
+                    <View style={styles.retakeTopRow}>
+                      <Pressable
+                        onPress={retakeRecording}
+                        hitSlop={10}
+                        style={styles.retakeTopButton}
+                      >
+                        <Text style={styles.retakeTopLabel}>撮り直す</Text>
+                        <Text style={styles.retakeTopArrow}>←</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+
+                  {!isCassetteConnectPromptVisible ? (
+                    <RecordToolbar
+                      active={activeTab}
+                      onPressRec={() => setActiveTab("rec")}
+                      onPressArchive={() => setActiveTab("archive")}
+                      hasUnopenedInArchive={hasUnopenedInArchive}
+                    />
+                  ) : null}
+                </View>
+
+                <View
+                  style={styles.slideViewport}
+                  onLayout={(e) => setSlideWidth(e.nativeEvent.layout.width)}
+                >
+                  <Animated.View
+                    style={[
+                      styles.slideTrack,
+                      { width: slideWidth * 2 },
+                      {
+                        transform: [{ translateX: slideX }],
+                      },
+                    ]}
+                  >
+                    <View style={[styles.slidePane, { width: slideWidth }]}>
+                      {!isCassetteConnectPromptVisible ? (
+                        <Text style={styles.dateText}>
+                          {formatDisplayDate(now)}
+                        </Text>
+                      ) : null}
+
+                      <View style={styles.centerArea}>
+                        {flow === FLOW.RECORD && isCassetteConnectPromptVisible ? (
+                          <View style={styles.connectionGuideLayer}>
+                            <ScrollView
+                              style={styles.connectionGuideScroll}
+                              contentContainerStyle={
+                                styles.connectionGuideScrollContent
+                              }
+                              showsVerticalScrollIndicator={false}
+                            >
+                              <View style={styles.connectionGuideCard}>
+                                <Text style={styles.connectionGuideMessage}>
+                                  カセットレコーダーと{"\n"}接続しましょう
+                                </Text>
+                              </View>
+                              <View style={styles.connectionGuideActions}>
+                                <Pressable
+                                  onPress={() => {
+                                    void openWifiSettings();
+                                  }}
+                                  style={styles.connectionGuidePrimaryAction}
+                                  hitSlop={8}
+                                >
+                                  <Text style={styles.connectionGuidePrimaryText}>
+                                    設定を開く
+                                  </Text>
+                                </Pressable>
+                                <Text style={styles.connectionGuideHelpText}>
+                                  接続方法
+                                </Text>
+                                <View style={styles.connectionGuideBottomCard}>
+                                  <Text style={styles.connectionGuideBottomText}>
+                                    1. カセットレコーダーの{"\n"}電源をいれます
+                                    {"\n\n"}
+                                    2. 「設定」アプリで{"\n"}
+                                    「_echocapsule_dev」を選ぶ
+                                    {"\n\n"}
+                                    3. パスワードを入れる
+                                  </Text>
+                                </View>
+                              </View>
+                            </ScrollView>
+                          </View>
+                        ) : flow === FLOW.RECORD ? (
+                          <View style={styles.flowLayer}>
+                            <View
                               style={[
-                                styles.buttonWrap,
-                                isRecordVisualActive && styles.recordingGlow,
-                                { transform: [{ scale: pulse }] },
+                                styles.recordGroup,
+                                { marginTop: RECORD_BUTTON_OFFSET_Y },
+                              ]}
+                            >
+                              <Animated.View
+                                style={[
+                                  styles.buttonWrap,
+                                  isRecordVisualActive && styles.recordingGlow,
+                                  { transform: [{ scale: pulse }] },
+                                ]}
+                              >
+                                <Pressable
+                                  style={styles.buttonPressable}
+                                  onPressIn={() => {
+                                    isHoldingRecordRef.current = true;
+                                    setIsRecordPressing(true);
+                                    void startRecording();
+                                  }}
+                                  onPressOut={handleRecordPressOut}
+                                  pressRetentionOffset={{
+                                    top: 10000,
+                                    left: 10000,
+                                    right: 10000,
+                                    bottom: 10000,
+                                  }}
+                                  hitSlop={12}
+                                  disabled={isLockedToday}
+                                >
+                                  <Image
+                                    source={
+                                      isLockedToday
+                                        ? require("../../assets/images/norecButton.png")
+                                        : isRecordVisualActive
+                                          ? require("../../assets/images/onrec.png")
+                                          : require("../../assets/images/home_voiceButton.png")
+                                    }
+                                    style={[
+                                      styles.voiceButton,
+                                      isLockedToday && styles.voiceButtonDisabled,
+                                      isLockedToday && {
+                                        transform: [
+                                          { translateY: NOREC_BUTTON_NUDGE_Y },
+                                        ],
+                                      },
+                                      { tintColor: undefined },
+                                    ]}
+                                    resizeMode="contain"
+                                  />
+                                </Pressable>
+                              </Animated.View>
+                              {!isLockedToday ? (
+                                <Text
+                                  style={[
+                                    styles.recordTimeText,
+                                    isRecordingWarning &&
+                                      styles.recordTimeTextWarning,
+                                  ]}
+                                >
+                                  {formatMillis(elapsedMs)}
+                                </Text>
+                              ) : null}
+                            </View>
+                          </View>
+                        ) : (
+                          <View style={styles.flowLayer}>
+                            <View
+                              style={[
+                                styles.playerGroup,
+                                { marginTop: REVIEW_BUTTON_OFFSET_Y },
                               ]}
                             >
                               <Pressable
-                                style={styles.buttonPressable}
-                                onPressIn={() => {
-                                  isHoldingRecordRef.current = true;
-                                  setIsRecordPressing(true);
-                                  void startRecording();
-                                }}
-                                onPressOut={handleRecordPressOut}
-                                pressRetentionOffset={{
-                                  top: 10000,
-                                  left: 10000,
-                                  right: 10000,
-                                  bottom: 10000,
-                                }}
-                                hitSlop={12}
-                                disabled={isLockedToday}
+                                onPress={togglePlay}
+                                style={[
+                                  styles.playerButton,
+                                  !isLoaded && styles.disabled,
+                                ]}
+                                disabled={!isLoaded}
                               >
                                 <Image
                                   source={
-                                    isLockedToday
-                                      ? require("../../assets/images/norecButton.png")
-                                      : isRecordVisualActive
-                                        ? require("../../assets/images/onrec.png")
-                                        : require("../../assets/images/home_voiceButton.png")
+                                    isPlaying
+                                      ? require("../../assets/images/stopButton.png")
+                                      : require("../../assets/images/saiseiButton.png")
                                   }
-                                  style={[
-                                    styles.voiceButton,
-                                    isLockedToday && styles.voiceButtonDisabled,
-                                    isLockedToday && {
-                                      transform: [
-                                        { translateY: NOREC_BUTTON_NUDGE_Y },
-                                      ],
-                                    },
-                                    { tintColor: undefined },
-                                  ]}
+                                  style={styles.playerImage}
                                   resizeMode="contain"
                                 />
                               </Pressable>
-                            </Animated.View>
-                            {!isLockedToday ? (
-                              <Text
-                                style={[
-                                  styles.recordTimeText,
-                                  isRecordingWarning &&
-                                    styles.recordTimeTextWarning,
-                                ]}
-                              >
-                                {formatMillis(elapsedMs)}
-                              </Text>
-                            ) : null}
+                            </View>
                           </View>
-                        </View>
-                      ) : (
-                        <View style={styles.flowLayer}>
-                          <View
-                            style={[
-                              styles.playerGroup,
-                              { marginTop: REVIEW_BUTTON_OFFSET_Y },
-                            ]}
-                          >
-                            <Pressable
-                              onPress={togglePlay}
-                              style={[
-                                styles.playerButton,
-                                !isLoaded && styles.disabled,
-                              ]}
-                              disabled={!isLoaded}
+                        )}
+                      </View>
+
+                      <View style={styles.bottomArea}>
+                        {flow === FLOW.REVIEW ? (
+                          <View style={styles.progressRow}>
+                            <Text style={styles.timeText}>{timeLabel}</Text>
+
+                            <View
+                              style={styles.sliderWrap}
+                              onLayout={(e) =>
+                                setSliderWidth(e.nativeEvent.layout.width)
+                              }
                             >
-                              <Image
-                                source={
-                                  isPlaying
-                                    ? require("../../assets/images/stopButton.png")
-                                    : require("../../assets/images/saiseiButton.png")
-                                }
-                                style={styles.playerImage}
-                                resizeMode="contain"
+                              <Slider
+                                value={currentSliderValue}
+                                minimumValue={0}
+                                maximumValue={Math.max(durationMillis, 1)}
+                                onSlidingStart={onSlidingStart}
+                                onValueChange={onSliderValueChange}
+                                onSlidingComplete={onSlidingComplete}
+                                tapToSeek
+                                minimumTrackTintColor="#a7a2ae"
+                                maximumTrackTintColor="rgba(207, 200, 214, 0.9)"
+                                thumbTintColor="transparent"
+                                thumbImage={TRANSPARENT_THUMB}
+                                disabled={!isLoaded}
+                                style={styles.slider}
                               />
-                            </Pressable>
+                              <View
+                                pointerEvents="none"
+                                style={[
+                                  styles.customThumb,
+                                  {
+                                    left: Math.max(
+                                      0,
+                                      Math.min(sliderWidth - 10, thumbLeft - 5),
+                                    ),
+                                  },
+                                ]}
+                              />
+                            </View>
                           </View>
-                        </View>
-                      )}
-                    </View>
+                        ) : null}
 
-                    <View style={styles.bottomArea}>
-                      {flow === FLOW.REVIEW ? (
-                        <View style={styles.progressRow}>
-                          <Text style={styles.timeText}>{timeLabel}</Text>
-
-                          <View
-                            style={styles.sliderWrap}
-                            onLayout={(e) =>
-                              setSliderWidth(e.nativeEvent.layout.width)
+                        {flow === FLOW.REVIEW ? (
+                          <Pressable
+                            style={styles.okButton}
+                            onPress={
+                              isSaveComplete
+                                ? saveProjectAndBack
+                                : openProjectModal
                             }
                           >
-                            <Slider
-                              value={currentSliderValue}
-                              minimumValue={0}
-                              maximumValue={Math.max(durationMillis, 1)}
-                              onSlidingStart={onSlidingStart}
-                              onValueChange={onSliderValueChange}
-                              onSlidingComplete={onSlidingComplete}
-                              tapToSeek
-                              minimumTrackTintColor="#a7a2ae"
-                              maximumTrackTintColor="rgba(207, 200, 214, 0.9)"
-                              thumbTintColor="transparent"
-                              thumbImage={TRANSPARENT_THUMB}
-                              disabled={!isLoaded}
-                              style={styles.slider}
-                            />
-                            <View
-                              pointerEvents="none"
-                              style={[
-                                styles.customThumb,
-                                {
-                                  left: Math.max(
-                                    0,
-                                    Math.min(sliderWidth - 10, thumbLeft - 5),
-                                  ),
-                                },
-                              ]}
-                            />
-                          </View>
-                        </View>
-                      ) : null}
+                            <Text style={styles.okText}>O K</Text>
+                          </Pressable>
+                        ) : null}
+                      </View>
 
-                      {flow === FLOW.REVIEW ? (
-                        <Pressable
-                          style={styles.okButton}
-                          onPress={
-                            isSaveComplete
-                              ? saveProjectAndBack
-                              : openProjectModal
-                          }
-                        >
-                          <Text style={styles.okText}>O K</Text>
-                        </Pressable>
+                      {activeTab === "rec" && flow === FLOW.RECORD ? (
+                        <Text style={styles.recordGuideText}>{guideText}</Text>
                       ) : null}
                     </View>
 
-                    {activeTab === "rec" && flow === FLOW.RECORD ? (
-                      <Text style={styles.recordGuideText}>{guideText}</Text>
-                    ) : null}
-                  </View>
-
-                  <View style={[styles.slidePane, { width: slideWidth }]}>
-                    <ArchiveContent
-                      embedded
-                      onPressRec={() => setActiveTab("rec")}
-                    />
-                  </View>
-                </Animated.View>
-              </View>
+                    <View style={[styles.slidePane, { width: slideWidth }]}>
+                      <ArchiveContent
+                        embedded
+                        onPressRec={() => setActiveTab("rec")}
+                      />
+                    </View>
+                  </Animated.View>
+                </View>
+              </Animated.View>
             </View>
 
             {(isProjectModalVisible ||
@@ -1969,6 +2208,110 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   topArea: { width: "100%", alignItems: "center", paddingTop: 26 },
+  cassetteFlipLayer: {
+    flex: 1,
+    width: "100%",
+  },
+  cassetteTopButton: {
+    position: "absolute",
+    top: -10,
+    left: -16,
+    width: 84,
+    height: 84,
+    zIndex: 20,
+    elevation: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cassetteTopButtonIcon: {
+    width: 82,
+    height: 84,
+  },
+  smartphoneTopButton: {
+    position: "absolute",
+    top: -10,
+    right: -12,
+    width: 84,
+    height: 84,
+    zIndex: 20,
+    elevation: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  smartphoneTopButtonBg: {
+    width: 82,
+    height: 84,
+  },
+  connectionGuideLayer: {
+    width: "100%",
+    flex: 1,
+    alignSelf: "stretch",
+  },
+  connectionGuideScroll: {
+    width: "100%",
+    flex: 1,
+  },
+  connectionGuideScrollContent: {
+    alignItems: "center",
+    paddingTop: 20,
+    paddingBottom: 24,
+  },
+  connectionGuideCard: {
+    width: "90%",
+    maxWidth: 350,
+    minHeight: 130,
+    borderRadius: 30,
+    backgroundColor: "rgba(249, 249, 251, 0.88)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    marginBottom: 20,
+  },
+  connectionGuideMessage: {
+    color: "#17171a",
+    fontSize: 22,
+    lineHeight: 34,
+    textAlign: "center",
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
+  connectionGuideActions: {
+    width: "100%",
+    alignItems: "center",
+  },
+  connectionGuidePrimaryAction: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  connectionGuidePrimaryText: {
+    color: "#2d6fdf",
+    fontSize: 20,
+    lineHeight: 24,
+    textDecorationLine: "underline",
+    fontWeight: "700",
+  },
+  connectionGuideHelpText: {
+    marginTop: 28,
+    color: "#1e1f24",
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: "700",
+  },
+  connectionGuideBottomCard: {
+    marginTop: 12,
+    width: "90%",
+    maxWidth: 350,
+    borderRadius: 30,
+    backgroundColor: "rgba(249, 249, 251, 0.9)",
+    paddingHorizontal: 26,
+    paddingVertical: 26,
+  },
+  connectionGuideBottomText: {
+    color: "#17171a",
+    fontSize: 17,
+    lineHeight: 32,
+    fontWeight: "700",
+  },
   slideViewport: {
     flex: 1,
     width: "100%",
