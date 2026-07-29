@@ -72,3 +72,27 @@ export async function removeCapsule(id: string): Promise<boolean> {
 export function isCapsuleUnlocked(item: CapsuleRecord, nowMs = Date.now()): boolean {
   return nowMs >= item.unlockAtMs;
 }
+
+/**
+ * テープ名が未入力のときに使う既定のタイトルを作る。
+ *
+ * 同じ日に複数録ると一覧で見分けがつかなくなるため、
+ * 既存と重なる場合は「2026/7/30 (1)」のように連番を付ける。
+ *
+ * 書式は rec 画面とカセット画面で揃えること。以前は片方が
+ * ゼロ埋めありで、同じ日でも別の文字列になっていた。
+ */
+export async function buildDefaultTitle(recordedAtMs: number): Promise<string> {
+  const d = new Date(recordedAtMs);
+  const base = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+
+  const existing = await loadCapsules();
+  const taken = new Set(existing.map((item) => item.title));
+  if (!taken.has(base)) return base;
+
+  let suffix = 1;
+  while (taken.has(`${base} (${suffix})`)) {
+    suffix += 1;
+  }
+  return `${base} (${suffix})`;
+}

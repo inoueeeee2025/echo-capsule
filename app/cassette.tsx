@@ -1,4 +1,8 @@
-import { addCapsule, loadCapsules } from "@/src/capsules/storage";
+import {
+  addCapsule,
+  buildDefaultTitle,
+  loadCapsules,
+} from "@/src/capsules/storage";
 import { hardwareWS, type HardwareState } from "@/src/hardware/ws";
 import {
   computeUnlockAtMs,
@@ -296,7 +300,7 @@ export default function CassetteScreen() {
 
       const recordedAtMs = Date.now();
       const unlockAtMs = computeUnlockAtMs(recordedAtMs);
-      const title = `${new Date(recordedAtMs).getFullYear()}/${String(new Date(recordedAtMs).getMonth() + 1).padStart(2, "0")}/${String(new Date(recordedAtMs).getDate()).padStart(2, "0")}`;
+      const title = await buildDefaultTitle(recordedAtMs);
       const durationSec = Math.max(
         1,
         Math.floor((Date.now() - recordingStartRef.current) / 1000),

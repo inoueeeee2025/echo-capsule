@@ -4,6 +4,7 @@ import ArchiveContent from "@/components/ArchiveContent";
 import RecordToolbar from "@/components/RecordToolbar";
 import {
   addCapsule,
+  buildDefaultTitle,
   CapsuleRecord,
   loadCapsules,
   updateCapsule,
@@ -586,9 +587,8 @@ export default function RecordDoneScreen() {
 
     const recordedAtMs = source?.recordedAtMs ?? lastRecordedAtMs ?? Date.now();
     const durationMs = source?.durationMs ?? elapsedMs;
-    const baseDate = new Date(recordedAtMs);
-    const fallbackName = `${baseDate.getFullYear()}/${baseDate.getMonth() + 1}/${baseDate.getDate()}`;
-    const normalized = (options?.nameOverride ?? projectName).trim() || fallbackName;
+    const typedName = (options?.nameOverride ?? projectName).trim();
+    const normalized = typedName || (await buildDefaultTitle(recordedAtMs));
     const unlockAtMs = computeUnlockAtMs(recordedAtMs);
 
     const savedCapsuleId = `capsule-${recordedAtMs}-${Math.random().toString(36).slice(2, 8)}`;
