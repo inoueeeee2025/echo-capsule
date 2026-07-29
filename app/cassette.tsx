@@ -4,6 +4,7 @@ import {
   computeUnlockAtMs,
   DEMO_MODE,
   DEMO_UNLOCK_DELAY_MS,
+  MAX_RECORDING_MS,
 } from "@/src/config";
 import {
   createAudioPlayer,
@@ -116,6 +117,14 @@ export default function CassetteScreen() {
   const recordingStartRef = useRef(0);
   const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isHardwareRecordingRef = useRef(false);
+  // ハードの REC が押されている間だけ true。
+  // startCassetteRecording は非同期なので、準備が終わる頃には
+  // 既に離されていることがある。その取りこぼしを検出するために使う。
+  const isRecPressedRef = useRef(false);
+  // 押しっぱなし放置に備えた自動停止タイマー。
+  const maxRecordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const prevHardwareStateRef = useRef<HardwareState>({
     stop: false,
     play: false,
@@ -242,7 +251,36 @@ export default function CassetteScreen() {
     setActiveCapsuleRecordedAtMs(target.recordedAtMs);
   }, [activeCapsuleIndex, playableCapsules]);
 
+  const clearMaxRecordingTimeout = useCallback(() => {
+    if (!maxRecordingTimeoutRef.current) return;
+    clearTimeout(maxRecordingTimeoutRef.current);
+    maxRecordingTimeoutRef.current = null;
+  }, []);
+
+  /**
+   * 始まってしまった録音を、保存せずに畳む。
+   * REC の準備が終わる前にボタンが離された場合に使う。
+   */
+  const abortCassetteRecording = useCallback(async () => {
+    clearMaxRecordingTimeout();
+    const recording = recordingRef.current;
+    recordingRef.current = null;
+    isHardwareRecordingRef.current = false;
+    if (recording) {
+      try {
+        await recording.stop();
+      } catch {}
+    }
+    try {
+      await setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: true,
+      });
+    } catch {}
+  }, [clearMaxRecordingTimeout]);
+
   const stopCassetteRecording = useCallback(async () => {
+    clearMaxRecordingTimeout();
     const recording = recordingRef.current;
     recordingRef.current = null;
     if (!recording) return null;
@@ -281,7 +319,7 @@ export default function CassetteScreen() {
     } finally {
       isHardwareRecordingRef.current = false;
     }
-  }, [scheduleLatestCapsuleRefresh]);
+  }, [clearMaxRecordingTimeout, scheduleLatestCapsuleRefresh]);
 
   const startCassetteRecording = useCallback(async () => {
     if (isHardwareRecordingRef.current) return;
@@ -304,10 +342,30 @@ export default function CassetteScreen() {
       recordingRef.current = recording;
       recordingStartRef.current = Date.now();
       isHardwareRecordingRef.current = true;
+
+      // REC を押しっぱなしのまま放置されても止まるようにする。
+      // rec 画面と違い、ここには上限がなかった。
+      clearMaxRecordingTimeout();
+      maxRecordingTimeoutRef.current = setTimeout(() => {
+        maxRecordingTimeoutRef.current = null;
+        void stopCassetteRecording();
+      }, MAX_RECORDING_MS);
+
+      // 準備を待っている間に REC が離されていた場合、停止処理は
+      // 「まだ録音していない」と判断して素通りしている。ここで畳む。
+      if (!isRecPressedRef.current) {
+        await abortCassetteRecording();
+      }
     } catch {
       isHardwareRecordingRef.current = false;
     }
-  }, [recorder, unloadSound]);
+  }, [
+    abortCassetteRecording,
+    clearMaxRecordingTimeout,
+    recorder,
+    stopCassetteRecording,
+    unloadSound,
+  ]);
 
   const finishPendingPageTransition = useCallback(() => {
     arrivalIntroTranslateX.stopAnimation();
@@ -431,9 +489,11 @@ export default function CassetteScreen() {
         handleHardwarePlaybackChange(true);
       }
       if (recDown) {
+        isRecPressedRef.current = true;
         void startCassetteRecording();
       }
       if (recUp) {
+        isRecPressedRef.current = false;
         void stopCassetteRecording();
       }
       if (playUp) {
@@ -563,6 +623,7 @@ export default function CassetteScreen() {
   useEffect(() => {
     return () => {
       clearRecordingTimeout();
+      clearMaxRecordingTimeout();
       if (loopRef.current) {
         loopRef.current.stop();
         loopRef.current = null;
@@ -573,7 +634,7 @@ export default function CassetteScreen() {
         recordingRef.current = null;
       }
     };
-  }, [clearRecordingTimeout, rotateProgress]);
+  }, [clearMaxRecordingTimeout, clearRecordingTimeout, rotateProgress]);
 
   useEffect(() => {
     if (!shouldPlayArrivalIntro) return;

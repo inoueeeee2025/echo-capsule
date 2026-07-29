@@ -50,7 +50,7 @@ import {
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { hardwareWS, type HardwareState } from "@/src/hardware/ws";
-import { computeUnlockAtMs } from "@/src/config";
+import { computeUnlockAtMs, MAX_RECORDING_MS } from "@/src/config";
 
 const STATUS = {
   IDLE: "idle",
@@ -65,9 +65,8 @@ const FLOW = {
 
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const MAX_RECORDING_SECONDS = 180;
-const MAX_RECORDING_MS = MAX_RECORDING_SECONDS * 1000;
-const RECORDING_WARNING_MS = 170000; // 02:50
+// 上限を変えても警告表示が追従するよう、残り10秒で算出する
+const RECORDING_WARNING_MS = MAX_RECORDING_MS - 10000;
 const TIMER_INTERVAL_MS = 100;
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
