@@ -227,6 +227,10 @@ export default function RecordDoneScreen() {
   const soundRef = useRef<AudioPlayer | null>(null);
   const playbackSubscriptionRef = useRef<{ remove: () => void } | null>(null);
   const autoStoppingRef = useRef(false);
+  // 録音ボタン（画面・ハードとも）が押されている間だけ true。
+  // startRecording は非同期なので、準備が終わる頃には既に離されていることがある。
+  // その取りこぼしを検出するために使う。
+  const isHoldingRecordRef = useRef(false);
   const isSlidingRef = useRef(false);
   const prevHardwareStateRef = useRef<HardwareState>({
     stop: false,
@@ -395,6 +399,33 @@ export default function RecordDoneScreen() {
     }
   }, []);
 
+  /**
+   * 始まってしまった録音を、保存せずに畳む。
+   *
+   * 押している時間が短く、録音の準備が終わる前にボタンが離された場合に使う。
+   * 短すぎる音声を保存しても意味がないので、破棄して待機状態に戻す。
+   */
+  const abortRecording = useCallback(async () => {
+    clearTimer();
+    const recording = recordingRef.current;
+    recordingRef.current = null;
+    if (recording) {
+      try {
+        await recording.stop();
+      } catch {}
+    }
+    try {
+      await setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: true,
+      });
+    } catch {}
+    setRecordStatus(STATUS.IDLE);
+    recordStatusRef.current = STATUS.IDLE;
+    setElapsedMs(0);
+    setIsRecordPressing(false);
+  }, []);
+
   const startRecording = useCallback(async () => {
     if (recordStatusRef.current === STATUS.RECORDING || flow !== FLOW.RECORD) {
       setIsRecordPressing(false);
@@ -442,9 +473,17 @@ export default function RecordDoneScreen() {
     setElapsedMs(0);
     setRecordStatus(STATUS.RECORDING);
     recordStatusRef.current = STATUS.RECORDING;
-  }, [flow, recorder, unloadSound]);
+
+    // 権限確認と prepareToRecordAsync を待っている間にボタンが離されていた場合、
+    // 停止処理はすでに「まだ録音中でない」と判断して素通りしている。
+    // ここで畳まないとレコーダーが回り続ける。
+    if (!isHoldingRecordRef.current) {
+      await abortRecording();
+    }
+  }, [abortRecording, flow, recorder, unloadSound]);
 
   const handleRecordPressOut = () => {
+    isHoldingRecordRef.current = false;
     setIsRecordPressing(false);
     if (recordStatusRef.current !== STATUS.RECORDING) return;
 
@@ -637,12 +676,14 @@ export default function RecordDoneScreen() {
           prevHardwareStateRef.current = s;
           return;
         }
+        isHoldingRecordRef.current = true;
         setIsRecordPressing(true);
         void startRecording();
       }
       // REC を離したときと STOP を押したときで、停止から保存までの流れは同じ。
       // 以前は同じコードが2箇所にあり、片方だけ直す事故が起きやすかった。
       if (recUp || stopDown) {
+        isHoldingRecordRef.current = false;
         setIsRecordPressing(false);
         if (recordStatusRef.current === STATUS.RECORDING) {
           void stopAndSaveFromHardware();
@@ -1442,6 +1483,7 @@ export default function RecordDoneScreen() {
                               <Pressable
                                 style={styles.buttonPressable}
                                 onPressIn={() => {
+                                  isHoldingRecordRef.current = true;
                                   setIsRecordPressing(true);
                                   void startRecording();
                                 }}
