@@ -19,6 +19,61 @@
 
 ---
 
+## 検証環境（2台構成）
+
+Mac 1台だと「チャット・Git 用の家の Wi-Fi」と「ハードの AP」を
+何度も切り替えることになるため、**Windows を Metro 専用機にする**。
+
+```
+Mac（家のWi-Fi）        Windows（_echocapsule_dev）
+  コード修正                Metro を動かす
+  git push        ──→       git pull → Metro 再起動 → iPhone で確認
+```
+
+**Windows 側ではコードを編集しない。** 動かす専用。
+`npm install` で `package-lock.json` に差分が出ても**コミットしない**こと。
+
+### Windows のセットアップ（家の Wi-Fi に繋いだ状態で行う）
+
+```bash
+# Node.js は LTS（v20 か v22）、Git for Windows を入れておく
+git config --global core.autocrlf false   # 改行コードの自動変換を切る
+
+git clone https://github.com/inoueeeee2025/echo-capsule.git
+cd echo-capsule
+git checkout develop-hardware-tomorrow
+npm install
+
+npx expo start --offline   # 家の Wi-Fi のまま一度動作確認する
+```
+
+**先に家の Wi-Fi で動くことを確認してから AP に切り替える。**
+いきなり AP で起動すると、問題が起きたときに原因が2つに増える。
+
+### 🔴 Windows ファイアウォール
+
+**iPhone から Metro に繋がらないときは、まずここを疑う。**
+
+- 初回起動時の「Node.js のネットワークアクセスを許可しますか」で**許可する**
+- ハードの AP は Windows に**「パブリック ネットワーク」**と判定される。
+  パブリックは受信接続が既定でブロックされるため、iPhone から届かない
+
+対処はどちらか。
+
+- 設定 → ネットワークとインターネット → `_echocapsule_dev` →
+  ネットワーク プロファイルを**「プライベート」**に変更
+- コントロールパネル → Windows Defender ファイアウォール → アプリの許可 →
+  `Node.js` の**パブリック**にチェック
+
+### 起動時の確認
+
+1. `ipconfig` で IP が **`192.168.46.x`** になっているか
+2. `npx expo start --offline`
+3. Expo Go のホーム画面はオフラインだとエラー表示になるが、
+   **URL 手入力（`exp://192.168.46.x:8081`）で開ける**
+
+---
+
 ## Day 1（前半）— 実行形態の両対応を確保 ⏱ 1.5h
 
 コード変更ゼロ。設定ファイルのみ。**最も安全で、最も効果が大きい。**
