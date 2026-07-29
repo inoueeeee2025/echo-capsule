@@ -87,10 +87,12 @@ const LETTER_BACKGROUND_IMAGE = require("../../assets/images/letter_background.p
 const RECORDED_DATE_STORAGE_KEY = "recordedDateKey";
 const DISMISSED_NOTICE_IDS_STORAGE_KEY = "dismissedUnlockNoticeIds";
 const TAB_SWIPE_THRESHOLD = 28;
-// 接続案内を画面のどれくらい下から始めるか。上のカードが中央あたりに来るよう調整する。
-const CONNECTION_GUIDE_TOP_OFFSET = 120;
-const CASSETTE_FLIP_OUT_DURATION_MS = 190;
-const CASSETTE_FLIP_IN_DURATION_MS = 230;
+// 接続案内を画面のどれくらい下から始めるか。
+// 「接続しましょう」のカードが画面中央あたりに来るようにしたいので、
+// 端末の高さに対する割合で決める。固定値だと機種によって位置がずれる。
+// もっと下げたい / 上げたいときはこの割合だけ触ればよい。
+const CONNECTION_GUIDE_TOP_RATIO = 0.26;
+const CONNECTION_GUIDE_FADE_MS = 220;
 const PUSH_NOTICE_SLIDE_DURATION_MS = 340;
 const PUSH_NOTICE_VISIBLE_MS = 8000;
 const PUSH_NOTICE_SOUND_CLEANUP_MS = 1200;
@@ -204,12 +206,10 @@ export default function RecordDoneScreen() {
   // ハードとのペアリング案内を出しているか
   const [isCassetteConnectPromptVisible, setIsCassetteConnectPromptVisible] =
     useState(false);
-  const [isCassetteFlipAnimating, setIsCassetteFlipAnimating] = useState(false);
   // ハードの Wi-Fi に繋がっているか。hardwareWS の接続状態をそのまま反映する
   const [isHardwareWifiConnected, setIsHardwareWifiConnected] = useState(false);
 
   const pulse = useRef(new Animated.Value(1)).current;
-  const cassetteFlip = useRef(new Animated.Value(0)).current;
   // どちらの面を見せるか（0 = 録音画面 / 1 = 接続案内）。
   // 条件分岐で描き分けると折り返しのたびに中身が作り直され、
   // アニメーションの後半で遅れて現れてしまうため、
@@ -954,23 +954,6 @@ export default function RecordDoneScreen() {
   });
   const guideFaceOpacity = faceProgress;
 
-  // ペアリング案内の出し入れを、カセットが裏返るように見せるための補間
-  const cassetteFlipOpacity = cassetteFlip.interpolate({
-    inputRange: [-1, 0, 1],
-    outputRange: [0, 1, 0],
-  });
-  const cassetteFlipScale = cassetteFlip.interpolate({
-    inputRange: [-1, 0, 1],
-    outputRange: [0.94, 1, 0.94],
-  });
-  const cassetteFlipRotateY = cassetteFlip.interpolate({
-    inputRange: [-1, 0, 1],
-    outputRange: ["-70deg", "0deg", "70deg"],
-  });
-  const cassetteFlipTranslateX = cassetteFlip.interpolate({
-    inputRange: [-1, 0, 1],
-    outputRange: [-40, 0, 40],
-  });
 
   const currentSliderValue = isSliding ? sliderMillis : positionMillis;
   const isRecordVisualActive =
@@ -1365,43 +1348,24 @@ export default function RecordDoneScreen() {
     router.push("/cassette");
   }, [router]);
 
-  // ペアリング案内の出し入れ。カセットが裏返るような演出で切り替える。
+  // ペアリング案内の出し入れ。
+  //
+  // 以前はカセットが裏返るような演出にしていたが、折り返しの瞬間に
+  // 画面が完全に消えるため、中身が遅れて現れるように見えていた。
+  // 両方の面を重ねたまま透明度だけ入れ替えるので、消える時間がない。
   const transitionCassetteConnectPrompt = useCallback(
     (nextVisible: boolean) => {
-      if (isCassetteFlipAnimating) return;
       if (isCassetteConnectPromptVisible === nextVisible) return;
 
-      setIsCassetteFlipAnimating(true);
-      const outDirection = nextVisible ? 1 : -1;
-
-      Animated.timing(cassetteFlip, {
-        toValue: outDirection,
-        duration: CASSETTE_FLIP_OUT_DURATION_MS,
-        easing: Easing.in(Easing.cubic),
+      setIsCassetteConnectPromptVisible(nextVisible);
+      Animated.timing(faceProgress, {
+        toValue: nextVisible ? 1 : 0,
+        duration: CONNECTION_GUIDE_FADE_MS,
+        easing: Easing.out(Easing.quad),
         useNativeDriver: true,
-      }).start(() => {
-        // 表示する面はアニメーション値で切り替える。React の再描画を
-        // 挟まないので、折り返しの瞬間に中身が生成されることがない。
-        faceProgress.setValue(nextVisible ? 1 : 0);
-        setIsCassetteConnectPromptVisible(nextVisible);
-        cassetteFlip.setValue(-outDirection);
-
-        Animated.timing(cassetteFlip, {
-          toValue: 0,
-          duration: CASSETTE_FLIP_IN_DURATION_MS,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }).start(() => {
-          setIsCassetteFlipAnimating(false);
-        });
-      });
+      }).start();
     },
-    [
-      cassetteFlip,
-      faceProgress,
-      isCassetteConnectPromptVisible,
-      isCassetteFlipAnimating,
-    ],
+    [faceProgress, isCassetteConnectPromptVisible],
   );
 
   // 案内を出している最中に接続できたら、案内を引っ込める。
@@ -1579,21 +1543,7 @@ export default function RecordDoneScreen() {
                 />
               ) : null}
 
-              <Animated.View
-                pointerEvents={isCassetteFlipAnimating ? "none" : "auto"}
-                style={[
-                  styles.cassetteFlipLayer,
-                  {
-                    opacity: cassetteFlipOpacity,
-                    transform: [
-                      { perspective: 1200 },
-                      { translateX: cassetteFlipTranslateX },
-                      { rotateY: cassetteFlipRotateY },
-                      { scale: cassetteFlipScale },
-                    ],
-                  },
-                ]}
-              >
+              <View style={styles.screenFaceLayer}>
                 <View style={styles.topArea}>
                   {/*
                     カセットモードへの入口。
@@ -1702,9 +1652,13 @@ export default function RecordDoneScreen() {
                           >
                             <ScrollView
                               style={styles.connectionGuideScroll}
-                              contentContainerStyle={
-                                styles.connectionGuideScrollContent
-                              }
+                              contentContainerStyle={[
+                                styles.connectionGuideScrollContent,
+                                {
+                                  paddingTop:
+                                    windowHeight * CONNECTION_GUIDE_TOP_RATIO,
+                                },
+                              ]}
                               showsVerticalScrollIndicator={false}
                             >
                               <View style={styles.connectionGuideCard}>
@@ -1919,7 +1873,7 @@ export default function RecordDoneScreen() {
                     </View>
                   </Animated.View>
                 </View>
-              </Animated.View>
+              </View>
             </View>
 
             {(isProjectModalVisible ||
@@ -2251,7 +2205,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   topArea: { width: "100%", alignItems: "center", paddingTop: 26 },
-  cassetteFlipLayer: {
+  screenFaceLayer: {
     flex: 1,
     width: "100%",
   },
@@ -2295,7 +2249,6 @@ const styles = StyleSheet.create({
   },
   connectionGuideScrollContent: {
     alignItems: "center",
-    paddingTop: CONNECTION_GUIDE_TOP_OFFSET,
     paddingBottom: 40,
   },
   connectionGuideCard: {
