@@ -87,6 +87,8 @@ const LETTER_BACKGROUND_IMAGE = require("../../assets/images/letter_background.p
 const RECORDED_DATE_STORAGE_KEY = "recordedDateKey";
 const DISMISSED_NOTICE_IDS_STORAGE_KEY = "dismissedUnlockNoticeIds";
 const TAB_SWIPE_THRESHOLD = 28;
+// 接続案内を画面のどれくらい下から始めるか。上のカードが中央あたりに来るよう調整する。
+const CONNECTION_GUIDE_TOP_OFFSET = 120;
 const CASSETTE_FLIP_OUT_DURATION_MS = 190;
 const CASSETTE_FLIP_IN_DURATION_MS = 230;
 const PUSH_NOTICE_SLIDE_DURATION_MS = 340;
@@ -1368,13 +1370,21 @@ export default function RecordDoneScreen() {
       }).start(() => {
         setIsCassetteConnectPromptVisible(nextVisible);
         cassetteFlip.setValue(-outDirection);
-        Animated.timing(cassetteFlip, {
-          toValue: 0,
-          duration: CASSETTE_FLIP_IN_DURATION_MS,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }).start(() => {
-          setIsCassetteFlipAnimating(false);
+
+        // 切り替え先の中身が描画され終わるのを待ってから戻す。
+        // すぐ始めると、まだ空のレイヤーが動き出してから
+        // カードが後追いで現れる（遅れて出てくるように見える）。
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            Animated.timing(cassetteFlip, {
+              toValue: 0,
+              duration: CASSETTE_FLIP_IN_DURATION_MS,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }).start(() => {
+              setIsCassetteFlipAnimating(false);
+            });
+          });
         });
       });
     },
@@ -2253,8 +2263,8 @@ const styles = StyleSheet.create({
   },
   connectionGuideScrollContent: {
     alignItems: "center",
-    paddingTop: 20,
-    paddingBottom: 24,
+    paddingTop: CONNECTION_GUIDE_TOP_OFFSET,
+    paddingBottom: 40,
   },
   connectionGuideCard: {
     width: "90%",
