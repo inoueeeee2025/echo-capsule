@@ -62,6 +62,9 @@ const PROJECT_SWIPE_THRESHOLD = 28;
 const PROJECT_SLIDE_TRANSITION_MS = 180;
 const ARRIVAL_SOUND_FILE = require("../assets/soun/決定ボタンを押す40.mp3");
 const ARRIVAL_SOUND_CLEANUP_MS = 1200;
+// これより短い録音は中身がほとんど無く、再生しても何も聞こえない。
+// 押した瞬間に離れた場合などに起きるので、預からずに弾く。
+const MIN_RECORDING_MS = 1000;
 const SAVED_NOTICE_FADE_MS = 260;
 const SAVED_NOTICE_HOLD_MS = 1600;
 const AnimatedImageBackground = Animated.createAnimatedComponent(ImageBackground);
@@ -197,7 +200,6 @@ export default function CassetteScreen() {
 
   const onPlaybackStatusUpdate = useCallback((status: AudioStatus) => {
     if (!status.isLoaded) {
-      console.log("[CAS] status: 読み込めていない");
       setIsPlaying(false);
       return;
     }
@@ -338,13 +340,18 @@ export default function CassetteScreen() {
       }
 
       const recordedAtMs = Date.now();
-      const durationSec = Math.max(
-        1,
-        Math.floor((Date.now() - recordingStartRef.current) / 1000),
-      );
+      const elapsedMs = Date.now() - recordingStartRef.current;
+
+      if (elapsedMs < MIN_RECORDING_MS) {
+        console.log(`[CAS] 短すぎるので破棄 ${elapsedMs}ms uri=${uri}`);
+        setNotice({ title: "短すぎました", caption: "もう一度録音してください" });
+        return null;
+      }
+
+      const durationSec = Math.max(1, Math.round(elapsedMs / 1000));
 
       // ここでは保存しない。聞き直して決めてもらうため、いったん預かる。
-      console.log(`[CAS] recorded ${durationSec}s uri=${uri}`);
+      console.log(`[CAS] recorded ${durationSec}s (${elapsedMs}ms) uri=${uri}`);
       setPendingRecording({ uri, recordedAtMs, durationSec });
       return uri;
     } catch {
