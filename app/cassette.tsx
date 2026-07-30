@@ -185,9 +185,9 @@ export default function CassetteScreen() {
   const boardWidth = DESIGN_WIDTH * uiScale;
   const boardLeft = Math.max(0, (windowWidth - boardWidth) / 2);
 
-  useEffect(() => {
-    isPlayingRef.current = isPlaying;
-  }, [isPlaying]);
+  // 描画のたびに即座に反映する。useEffect だと1フレーム遅れ、
+  // ボタンを押した瞬間の判定がずれることがある。
+  isPlayingRef.current = isPlaying;
 
   // 回転ループの継続判定で使う（コールバックの中から最新値を見るため）
   const shouldSpinRef = useRef(false);
@@ -197,8 +197,17 @@ export default function CassetteScreen() {
 
   const onPlaybackStatusUpdate = useCallback((status: AudioStatus) => {
     if (!status.isLoaded) {
+      console.log("[CAS] status: 読み込めていない");
       setIsPlaying(false);
       return;
+    }
+    // 再生位置が進んでいるかを見る。進んでいるのに聞こえないなら
+    // 出口（消音スイッチ・音量）側の問題になる。
+    if (status.playing) {
+      console.log(
+        `[CAS] status playing=${status.playing}` +
+          ` t=${status.currentTime?.toFixed(1)}/${status.duration?.toFixed(1)}`,
+      );
     }
     setIsPlaying(status.playing);
   }, []);
@@ -528,6 +537,14 @@ export default function CassetteScreen() {
     } catch {}
   }, []);
 
+  // PLAY を押したときの切り替え。
+  // state の反映を待たず、プレイヤーの実際の状態を見て決める。
+  const toggleHardwarePlayback = useCallback(() => {
+    const player = playerRef.current;
+    const playing = player?.currentStatus?.playing ?? isPlayingRef.current;
+    handleHardwarePlaybackChange(!playing);
+  }, [handleHardwarePlaybackChange]);
+
   // 表示中のときだけボタンを受け取る。
   // useEffect のままだと、裏に残っている録音画面と二重に反応してしまう。
   useFocusEffect(
@@ -571,7 +588,7 @@ export default function CassetteScreen() {
       // 確認待ちのあいだは、同じボタンでも意味が変わる。
       //   PLAY → 録った音を聞く / REC → 録り直す / STOP → 決定して保管
       if (isReviewingRef.current) {
-        if (playDown) handleHardwarePlaybackChange(!isPlayingRef.current);
+        if (playDown) toggleHardwarePlayback();
         if (recDown) {
           // ここで前の録音を捨てない。
           // 録り直しが成立しなければ前のテープが残る。
@@ -592,7 +609,7 @@ export default function CassetteScreen() {
       // 用意が間に合っていない場面で、離した時点で取り消されてしまい
       // 何も鳴らないことがあった。実物のデッキの PLAY も押すと固定される。
       if (playDown) {
-        handleHardwarePlaybackChange(!isPlayingRef.current);
+        toggleHardwarePlayback();
       }
       if (recDown) {
         isRecPressedRef.current = true;
@@ -612,6 +629,7 @@ export default function CassetteScreen() {
       moveActiveCapsuleBy,
       startCassetteRecording,
       stopCassetteRecording,
+      toggleHardwarePlayback,
     ]),
   );
 
@@ -774,6 +792,17 @@ export default function CassetteScreen() {
       }
       try {
         await unloadSound();
+
+        // 録音のあと、音声セッションが録音向きのままだと
+        // 再生を指示しても音が出ないことがある。作る前に戻しておく。
+        try {
+          await setAudioModeAsync({
+            allowsRecording: false,
+            playsInSilentMode: true,
+          });
+          await setIsAudioActiveAsync(true);
+        } catch {}
+
         const player = createAudioPlayer(
           { uri: activeAudioUri },
           { updateInterval: 200 },
