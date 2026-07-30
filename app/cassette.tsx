@@ -531,7 +531,6 @@ export default function CassetteScreen() {
     const unsub = hardwareWS.subscribe((s) => {
       const prev = prevHardwareStateRef.current;
       const playDown = s.play && !prev.play;
-      const playUp = !s.play && prev.play;
       const recDown = s.rec && !prev.rec;
       const recUp = !s.rec && prev.rec;
       const stopDown = s.stop && !prev.stop;
@@ -539,8 +538,7 @@ export default function CassetteScreen() {
       // 確認待ちのあいだは、同じボタンでも意味が変わる。
       //   PLAY → 録った音を聞く / REC → 録り直す / STOP → 決定して保管
       if (isReviewingRef.current) {
-        if (playDown) handleHardwarePlaybackChange(true);
-        if (playUp) handleHardwarePlaybackChange(false);
+        if (playDown) handleHardwarePlaybackChange(!isPlayingRef.current);
         if (recDown) {
           // ここで前の録音を捨てない。
           // 押し損ねて録音が成立しなかった場合に、前のテープまで
@@ -561,8 +559,12 @@ export default function CassetteScreen() {
         return;
       }
 
+      // PLAY は押すたびに再生と停止が入れ替わる。
+      // 押している間だけ鳴らす作りだと、録音直後のようにプレイヤーの
+      // 用意が間に合っていない場面で、離した時点で取り消されてしまい
+      // 何も鳴らないことがあった。実物のデッキの PLAY も押すと固定される。
       if (playDown) {
-        handleHardwarePlaybackChange(true);
+        handleHardwarePlaybackChange(!isPlayingRef.current);
       }
       if (recDown) {
         isRecPressedRef.current = true;
@@ -571,9 +573,6 @@ export default function CassetteScreen() {
       if (recUp) {
         isRecPressedRef.current = false;
         void stopCassetteRecording();
-      }
-      if (playUp) {
-        handleHardwarePlaybackChange(false);
       }
       if (stopDown) {
         handleHardwarePlaybackChange(false);
@@ -1083,7 +1082,7 @@ export default function CassetteScreen() {
             <View style={styles.reviewGuideList}>
               <Text style={styles.reviewGuideRow}>
                 <Text style={styles.reviewGuideKey}>PLAY</Text>
-                {"　聞いてみる"}
+                {"　聞いてみる / 止める"}
               </Text>
               <Text style={styles.reviewGuideRow}>
                 <Text style={styles.reviewGuideKey}>REC</Text>
