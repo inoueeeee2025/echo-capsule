@@ -63,6 +63,8 @@ const ARRIVAL_INTRO_SLIDE_DISTANCE_RATIO = 0.36;
 const FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD = DEMO_MODE;
 const PROJECT_SWIPE_THRESHOLD = 28;
 const PROJECT_SLIDE_TRANSITION_MS = 180;
+const SAVED_NOTICE_FADE_MS = 260;
+const SAVED_NOTICE_HOLD_MS = 1600;
 const AnimatedImageBackground = Animated.createAnimatedComponent(ImageBackground);
 
 type PlayableCapsule = {
@@ -99,6 +101,8 @@ export default function CassetteScreen() {
   // 実物のデッキと同じく録音中もテープは回る。
   // これが無いと、画面上は待機中とまったく区別がつかなかった。
   const [isCassetteRecording, setIsCassetteRecording] = useState(false);
+  // 録り終わったあと「◯◯ として保存しました」と知らせるための名前。
+  const [savedNoticeTitle, setSavedNoticeTitle] = useState<string | null>(null);
   const [playableCapsules, setPlayableCapsules] = useState<PlayableCapsule[]>(
     [],
   );
@@ -113,6 +117,7 @@ export default function CassetteScreen() {
   const pageSlideX = useRef(new Animated.Value(0)).current;
   const arrivalIntroTranslateX = useRef(new Animated.Value(0)).current;
   const arrivalIntroOpacity = useRef(new Animated.Value(0)).current;
+  const savedNoticeOpacity = useRef(new Animated.Value(0)).current;
   const isProjectSlideTransitioningRef = useRef(false);
   const pendingPageInAfterIntroRef = useRef(false);
   const pendingMoveDeltaRef = useRef<number | null>(null);
@@ -143,7 +148,9 @@ export default function CassetteScreen() {
   const hasAppliedRequestedCapsuleRef = useRef(false);
   const requestedCapsuleId =
     typeof params.capsuleId === "string" ? params.capsuleId : "";
-  const shouldPlayArrivalIntro = true;
+  // 録音のために飛んできた場合、まだ録っていないテープの名前を先に見せても
+  // 意味がないので登場演出は出さない。既存カプセルを開いたときだけ出す。
+  const shouldPlayArrivalIntro = params.autoRecord !== "1";
 
   const uiScale = useMemo(() => {
     const byWidth = windowWidth / DESIGN_WIDTH;
@@ -326,6 +333,7 @@ export default function CassetteScreen() {
         openedAtMs: null,
         hasTranscript: false,
       });
+      setSavedNoticeTitle(title);
       scheduleLatestCapsuleRefresh();
       return uri;
     } catch {
@@ -567,6 +575,33 @@ export default function CassetteScreen() {
   useEffect(() => {
     void refreshPlayableCapsule();
   }, [refreshPlayableCapsule]);
+
+  // 保存の知らせ。出して、少し置いて、消す。
+  useEffect(() => {
+    if (!savedNoticeTitle) return;
+
+    savedNoticeOpacity.setValue(0);
+    const animation = Animated.sequence([
+      Animated.timing(savedNoticeOpacity, {
+        toValue: 1,
+        duration: SAVED_NOTICE_FADE_MS,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.delay(SAVED_NOTICE_HOLD_MS),
+      Animated.timing(savedNoticeOpacity, {
+        toValue: 0,
+        duration: SAVED_NOTICE_FADE_MS,
+        easing: Easing.in(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]);
+    animation.start(({ finished }) => {
+      if (finished) setSavedNoticeTitle(null);
+    });
+
+    return () => animation.stop();
+  }, [savedNoticeOpacity, savedNoticeTitle]);
 
   useEffect(() => {
     let mounted = true;
@@ -891,6 +926,36 @@ export default function CassetteScreen() {
           </Pressable>
         </View>
 
+        {/*
+          録り終わったあと、どの名前で保管したかを知らせる。
+          録音前に名前を見せても、まだ存在しないテープの名前になってしまう。
+        */}
+        {savedNoticeTitle ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.arrivalIntroOverlay,
+              { opacity: savedNoticeOpacity },
+            ]}
+          >
+            <BlurView
+              intensity={34}
+              tint="light"
+              style={styles.arrivalIntroBlur}
+            />
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.arrivalIntroTitle,
+                zenAntiqueSoftLoaded && styles.arrivalIntroTitleZen,
+              ]}
+            >
+              {savedNoticeTitle}
+            </Text>
+            <Text style={styles.savedNoticeCaption}>として保存しました</Text>
+          </Animated.View>
+        ) : null}
+
         {showArrivalIntro ? (
           <Animated.View
             pointerEvents="none"
@@ -1023,6 +1088,13 @@ const styles = StyleSheet.create({
     fontSize: 50,
     fontWeight: "700",
     letterSpacing: 0.2,
+  },
+  savedNoticeCaption: {
+    marginTop: 14,
+    color: "#6f7178",
+    fontSize: 17,
+    fontWeight: "500",
+    letterSpacing: 0.4,
   },
   arrivalIntroTitleZen: {
     fontFamily: "ZenAntiqueSoft_400Regular",
