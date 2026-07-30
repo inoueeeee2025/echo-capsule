@@ -365,12 +365,6 @@ export default function CassetteScreen() {
     setNotice({ title, caption: "として保存しました" });
   }, [pendingRecording, unloadSound]);
 
-  // 確認画面で「録り直す」とき。預かっていた録音は捨てる。
-  const discardPendingRecording = useCallback(async () => {
-    await unloadSound();
-    setPendingRecording(null);
-  }, [unloadSound]);
-
   const startCassetteRecording = useCallback(async () => {
     if (isHardwareRecordingRef.current) return;
 
@@ -548,11 +542,11 @@ export default function CassetteScreen() {
         if (playDown) handleHardwarePlaybackChange(true);
         if (playUp) handleHardwarePlaybackChange(false);
         if (recDown) {
-          void (async () => {
-            await discardPendingRecording();
-            isRecPressedRef.current = true;
-            await startCassetteRecording();
-          })();
+          // ここで前の録音を捨てない。
+          // 押し損ねて録音が成立しなかった場合に、前のテープまで
+          // 失われてしまうため。新しく録れたら置き換わる。
+          isRecPressedRef.current = true;
+          void startCassetteRecording();
         }
         if (recUp) {
           isRecPressedRef.current = false;
@@ -591,7 +585,6 @@ export default function CassetteScreen() {
       return unsub;
     }, [
       confirmPendingRecording,
-      discardPendingRecording,
       handleHardwarePlaybackChange,
       moveActiveCapsuleBy,
       startCassetteRecording,
@@ -1069,7 +1062,7 @@ export default function CassetteScreen() {
           録り終えたあとの確認。ここで保管するか録り直すかを決める。
           スマホは筐体の中にあるので、どのボタンが何をするかを画面に出す。
         */}
-        {pendingRecording ? (
+        {pendingRecording && !isCassetteRecording ? (
           <View pointerEvents="none" style={styles.reviewOverlay}>
             <BlurView
               intensity={34}
@@ -1094,7 +1087,7 @@ export default function CassetteScreen() {
               </Text>
               <Text style={styles.reviewGuideRow}>
                 <Text style={styles.reviewGuideKey}>REC</Text>
-                {"　録り直す"}
+                {"　押しながら録り直す"}
               </Text>
               <Text style={styles.reviewGuideRow}>
                 <Text style={styles.reviewGuideKey}>STOP</Text>
