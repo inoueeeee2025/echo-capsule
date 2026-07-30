@@ -800,16 +800,11 @@ export default function CassetteScreen() {
       try {
         await unloadSound();
 
-        // 録音のあと、音声セッションが録音向きのままだと
-        // 再生を指示しても音が出ないことがある。作る前に戻しておく。
-        try {
-          await setAudioModeAsync({
-            allowsRecording: false,
-            playsInSilentMode: true,
-          });
-          await setIsAudioActiveAsync(true);
-        } catch {}
-
+        // ここで音声セッションを触ってはいけない。
+        // この処理は非同期なので、録音の開始と同時に走ると
+        // 録音用に設定したセッションを打ち消してしまい、
+        // 長く録っても中身が空のファイルになる。
+        // セッションを戻すのは録音を止めるときだけ（stopCassetteRecording）。
         const player = createAudioPlayer(
           { uri: activeAudioUri },
           { updateInterval: 200 },
