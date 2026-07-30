@@ -23,6 +23,7 @@ import {
   type AudioStatus,
 } from "expo-audio";
 import { ZenAntiqueSoft_400Regular } from "@expo-google-fonts/zen-antique-soft";
+import { Asset } from "expo-asset";
 import { BlurView } from "expo-blur";
 import { useFonts } from "expo-font";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -64,6 +65,8 @@ const ARRIVAL_INTRO_SLIDE_DISTANCE_RATIO = 0.36;
 const FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD = DEMO_MODE;
 const PROJECT_SWIPE_THRESHOLD = 28;
 const PROJECT_SLIDE_TRANSITION_MS = 180;
+const ARRIVAL_SOUND_FILE = require("../assets/soun/決定ボタンを押す40.mp3");
+const ARRIVAL_SOUND_CLEANUP_MS = 1200;
 const SAVED_NOTICE_FADE_MS = 260;
 const SAVED_NOTICE_HOLD_MS = 1600;
 const AnimatedImageBackground = Animated.createAnimatedComponent(ImageBackground);
@@ -154,6 +157,10 @@ export default function CassetteScreen() {
   // すでに把握しているカプセル。ここに無いものが解禁されたら「届いた」と見なす。
   const knownCapsuleIdsRef = useRef<Set<string>>(new Set());
   const hasSeededKnownCapsulesRef = useRef(false);
+  const arrivalSoundRef = useRef<AudioPlayer | null>(null);
+  const arrivalSoundCleanupTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const requestedCapsuleId =
     typeof params.capsuleId === "string" ? params.capsuleId : "";
   // 録音のために飛んできた場合、まだ録っていないテープの名前を先に見せても
@@ -584,6 +591,50 @@ export default function CassetteScreen() {
     void refreshPlayableCapsule();
   }, [refreshPlayableCapsule]);
 
+  const stopArrivalSound = useCallback(() => {
+    if (arrivalSoundCleanupTimerRef.current) {
+      clearTimeout(arrivalSoundCleanupTimerRef.current);
+      arrivalSoundCleanupTimerRef.current = null;
+    }
+    const player = arrivalSoundRef.current;
+    arrivalSoundRef.current = null;
+    if (!player) return;
+    try {
+      player.pause();
+    } catch {}
+    try {
+      player.remove();
+    } catch {}
+  }, []);
+
+  // 新着の知らせ音。モバイルモードの通知と同じ音を使う。
+  const playArrivalSound = useCallback(async () => {
+    // 録音中に鳴らすと自分の声に混ざるので鳴らさない。
+    if (isHardwareRecordingRef.current) return;
+
+    stopArrivalSound();
+    try {
+      const soundAsset = Asset.fromModule(ARRIVAL_SOUND_FILE);
+      if (!soundAsset.localUri) {
+        try {
+          await soundAsset.downloadAsync();
+        } catch {}
+      }
+      const uri = soundAsset.localUri ?? soundAsset.uri;
+      if (!uri) return;
+      const player = createAudioPlayer({ uri });
+      arrivalSoundRef.current = player;
+      player.play();
+      arrivalSoundCleanupTimerRef.current = setTimeout(() => {
+        if (arrivalSoundRef.current !== player) return;
+        arrivalSoundRef.current = null;
+        try {
+          player.remove();
+        } catch {}
+      }, ARRIVAL_SOUND_CLEANUP_MS);
+    } catch {}
+  }, [stopArrivalSound]);
+
   // 解禁されたカプセルが現れたらその場で知らせる。
   // これが無いと、開封のたびにモバイルモードへ戻る必要があった。
   const checkForNewlyUnlocked = useCallback(async () => {
@@ -612,11 +663,12 @@ export default function CassetteScreen() {
     await refreshPlayableCapsule();
     setActiveCapsuleIndex(0);
     setNotice({ title: arrived.title, caption: "が届きました" });
+    void playArrivalSound();
 
     if (arrived.openedAtMs === null) {
       await updateCapsule(arrived.id, { openedAtMs: Date.now() });
     }
-  }, [refreshPlayableCapsule]);
+  }, [playArrivalSound, refreshPlayableCapsule]);
 
   useFocusEffect(
     useCallback(() => {
@@ -757,6 +809,7 @@ export default function CassetteScreen() {
     return () => {
       clearRecordingTimeout();
       clearMaxRecordingTimeout();
+      stopArrivalSound();
       if (loopRef.current) {
         loopRef.current.stop();
         loopRef.current = null;
@@ -767,7 +820,12 @@ export default function CassetteScreen() {
         recordingRef.current = null;
       }
     };
-  }, [clearMaxRecordingTimeout, clearRecordingTimeout, rotateProgress]);
+  }, [
+    clearMaxRecordingTimeout,
+    clearRecordingTimeout,
+    rotateProgress,
+    stopArrivalSound,
+  ]);
 
   useEffect(() => {
     if (!shouldPlayArrivalIntro) return;
