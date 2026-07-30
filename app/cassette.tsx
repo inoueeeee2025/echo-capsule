@@ -127,8 +127,6 @@ export default function CassetteScreen() {
   const arrivalIntroOpacity = useRef(new Animated.Value(0)).current;
   const savedNoticeOpacity = useRef(new Animated.Value(0)).current;
   const isProjectSlideTransitioningRef = useRef(false);
-  const pendingPageInAfterIntroRef = useRef(false);
-  const pendingMoveDeltaRef = useRef<number | null>(null);
   const moveActiveCapsuleByRef = useRef<(delta: number) => void>(() => {});
   const progressRef = useRef(0);
   const loopRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -407,37 +405,18 @@ export default function CassetteScreen() {
     unloadSound,
   ]);
 
-  const finishPendingPageTransition = useCallback(() => {
-    arrivalIntroTranslateX.stopAnimation();
-    arrivalIntroOpacity.stopAnimation();
-    setIsArrivalIntroVisible(false);
-    pendingPageInAfterIntroRef.current = false;
-    pageSlideX.stopAnimation();
-    Animated.timing(pageSlideX, {
-      toValue: 0,
-      duration: PROJECT_SLIDE_TRANSITION_MS,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start(() => {
-      isProjectSlideTransitioningRef.current = false;
-      const queuedDelta = pendingMoveDeltaRef.current;
-      pendingMoveDeltaRef.current = null;
-      if (queuedDelta == null) return;
-      moveActiveCapsuleByRef.current(queuedDelta);
-    });
-  }, [arrivalIntroOpacity, arrivalIntroTranslateX, pageSlideX]);
-
+  // カプセルの送り。
+  //
+  // 以前は「出す」だけを行い、戻すのは登場演出の完了を待っていた。
+  // そのため演出を出さない場面では画面がずれたまま戻らず、
+  // 音だけ鳴って表示が真っ白になっていた。
+  // 演出と切り離し、スライドは自力で往復させる。
   const moveActiveCapsuleBy = useCallback(
     (delta: number) => {
       if (!isLandscapeViewport) return;
       if (playableCapsules.length <= 1) return;
-      if (isProjectSlideTransitioningRef.current) {
-        if (pendingPageInAfterIntroRef.current || isArrivalIntroVisible) {
-          pendingMoveDeltaRef.current = delta;
-          finishPendingPageTransition();
-        }
-        return;
-      }
+      if (isProjectSlideTransitioningRef.current) return;
+
       const next = activeCapsuleIndex + delta;
       if (next < 0 || next > playableCapsules.length - 1) return;
 
@@ -450,16 +429,28 @@ export default function CassetteScreen() {
         duration: PROJECT_SLIDE_TRANSITION_MS,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
-      }).start(() => {
-        pendingPageInAfterIntroRef.current = true;
+      }).start(({ finished }) => {
         pageSlideX.setValue(inFrom);
         setActiveCapsuleIndex(next);
+
+        if (!finished) {
+          pageSlideX.setValue(0);
+          isProjectSlideTransitioningRef.current = false;
+          return;
+        }
+
+        Animated.timing(pageSlideX, {
+          toValue: 0,
+          duration: PROJECT_SLIDE_TRANSITION_MS,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }).start(() => {
+          isProjectSlideTransitioningRef.current = false;
+        });
       });
     },
     [
       activeCapsuleIndex,
-      finishPendingPageTransition,
-      isArrivalIntroVisible,
       isLandscapeViewport,
       pageSlideX,
       playableCapsules.length,
@@ -870,16 +861,6 @@ export default function CassetteScreen() {
       ]),
     ]).start(() => {
       setIsArrivalIntroVisible(false);
-      if (!pendingPageInAfterIntroRef.current) return;
-      pendingPageInAfterIntroRef.current = false;
-      Animated.timing(pageSlideX, {
-        toValue: 0,
-        duration: PROJECT_SLIDE_TRANSITION_MS,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start(() => {
-        isProjectSlideTransitioningRef.current = false;
-      });
     });
   }, [
     activeCapsuleId,
