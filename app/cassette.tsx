@@ -323,7 +323,10 @@ export default function CassetteScreen() {
         playsInSilentMode: true,
       });
       const uri = recording.getStatus().url;
-      if (!uri) return null;
+      if (!uri) {
+        console.log("[CAS] stop: url が空だった");
+        return null;
+      }
 
       const recordedAtMs = Date.now();
       const durationSec = Math.max(
@@ -332,6 +335,7 @@ export default function CassetteScreen() {
       );
 
       // ここでは保存しない。聞き直して決めてもらうため、いったん預かる。
+      console.log(`[CAS] recorded ${durationSec}s uri=${uri}`);
       setPendingRecording({ uri, recordedAtMs, durationSec });
       return uri;
     } catch {
@@ -499,6 +503,7 @@ export default function CassetteScreen() {
 
   // ハードの PLAY / STOP ボタンから呼ばれる再生・停止の入口。
   const handleHardwarePlaybackChange = useCallback((next: boolean) => {
+    console.log(`[CAS] play=${next} player=${playerRef.current ? "あり" : "なし"}`);
     shouldPlayFromHardwareRef.current = next;
     const player = playerRef.current;
     if (!player) {
@@ -530,10 +535,28 @@ export default function CassetteScreen() {
     hardwareWS.connect();
     const unsub = hardwareWS.subscribe((s) => {
       const prev = prevHardwareStateRef.current;
+      console.log(
+        `[CAS] btn stop=${s.stop} play=${s.play} rec=${s.rec}` +
+          ` | recording=${isHardwareRecordingRef.current}` +
+          ` pressed=${isRecPressedRef.current}` +
+          ` reviewing=${isReviewingRef.current}`,
+      );
       const playDown = s.play && !prev.play;
       const recDown = s.rec && !prev.rec;
       const recUp = !s.rec && prev.rec;
       const stopDown = s.stop && !prev.stop;
+
+      // 録音中は「止める」だけを受け付ける。
+      // REC を離しても STOP を押しても止まるようにしておく。
+      // 実物のデッキは STOP で止めるので、そちらで操作されても困らないように。
+      if (isRecPressedRef.current || isHardwareRecordingRef.current) {
+        if (recUp || stopDown) {
+          isRecPressedRef.current = false;
+          void stopCassetteRecording();
+        }
+        prevHardwareStateRef.current = s;
+        return;
+      }
 
       // 確認待ちのあいだは、同じボタンでも意味が変わる。
       //   PLAY → 録った音を聞く / REC → 録り直す / STOP → 決定して保管
@@ -541,14 +564,9 @@ export default function CassetteScreen() {
         if (playDown) handleHardwarePlaybackChange(!isPlayingRef.current);
         if (recDown) {
           // ここで前の録音を捨てない。
-          // 押し損ねて録音が成立しなかった場合に、前のテープまで
-          // 失われてしまうため。新しく録れたら置き換わる。
+          // 録り直しが成立しなければ前のテープが残る。
           isRecPressedRef.current = true;
           void startCassetteRecording();
-        }
-        if (recUp) {
-          isRecPressedRef.current = false;
-          void stopCassetteRecording();
         }
         if (stopDown) {
           handleHardwarePlaybackChange(false);
@@ -569,10 +587,6 @@ export default function CassetteScreen() {
       if (recDown) {
         isRecPressedRef.current = true;
         void startCassetteRecording();
-      }
-      if (recUp) {
-        isRecPressedRef.current = false;
-        void stopCassetteRecording();
       }
       if (stopDown) {
         handleHardwarePlaybackChange(false);
@@ -763,6 +777,7 @@ export default function CassetteScreen() {
           player.remove();
           return;
         }
+        console.log(`[CAS] player ready uri=${activeAudioUri}`);
         playerRef.current = player;
         playbackSubscriptionRef.current = sub;
         onPlaybackStatusUpdate(player.currentStatus);
@@ -772,7 +787,8 @@ export default function CassetteScreen() {
             setIsPlaying(true);
           } catch {}
         }
-      } catch {
+      } catch (error) {
+        console.log("[CAS] player 作成に失敗", error);
         setIsPlaying(false);
       }
     })();
