@@ -5,12 +5,7 @@ import {
   updateCapsule,
 } from "@/src/capsules/storage";
 import { hardwareWS, type HardwareState } from "@/src/hardware/ws";
-import {
-  computeUnlockAtMs,
-  DEMO_MODE,
-  DEMO_UNLOCK_DELAY_MS,
-  MAX_RECORDING_MS,
-} from "@/src/config";
+import { computeUnlockAtMs, DEMO_MODE, MAX_RECORDING_MS } from "@/src/config";
 import {
   createAudioPlayer,
   RecordingPresets,
@@ -150,7 +145,6 @@ export default function CassetteScreen() {
   const isPlayingRef = useRef(false);
   const recordingRef = useRef<AudioRecorder | null>(null);
   const recordingStartRef = useRef(0);
-  const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isHardwareRecordingRef = useRef(false);
   // ハードの REC が押されている間だけ true。
   // startCassetteRecording は非同期なので、準備が終わる頃には
@@ -223,12 +217,6 @@ export default function CassetteScreen() {
     } catch {}
   }, []);
 
-  const clearRecordingTimeout = useCallback(() => {
-    if (!recordingTimeoutRef.current) return;
-    clearTimeout(recordingTimeoutRef.current);
-    recordingTimeoutRef.current = null;
-  }, []);
-
   const refreshPlayableCapsule = useCallback(async () => {
     const list = await loadCapsules();
     const now = Date.now();
@@ -280,17 +268,6 @@ export default function CassetteScreen() {
   // 録音したカプセルが開封可能になった頃に一覧を取り直す。
   // 本番の待ち時間（1年）では setTimeout の上限を超えるうえ意味がないので、
   // デモ中だけ動かす。
-  const scheduleLatestCapsuleRefresh = useCallback(() => {
-    if (!DEMO_MODE) return;
-    clearRecordingTimeout();
-    recordingTimeoutRef.current = setTimeout(() => {
-      void (async () => {
-        await refreshPlayableCapsule();
-        setActiveCapsuleIndex(0);
-      })();
-    }, DEMO_UNLOCK_DELAY_MS + 300);
-  }, [clearRecordingTimeout, refreshPlayableCapsule]);
-
   useEffect(() => {
     if (playableCapsules.length === 0) return;
     const safeIndex = Math.min(
@@ -386,8 +363,7 @@ export default function CassetteScreen() {
     await unloadSound();
     setPendingRecording(null);
     setNotice({ title, caption: "として保存しました" });
-    scheduleLatestCapsuleRefresh();
-  }, [pendingRecording, scheduleLatestCapsuleRefresh, unloadSound]);
+  }, [pendingRecording, unloadSound]);
 
   // 確認画面で「録り直す」とき。預かっていた録音は捨てる。
   const discardPendingRecording = useCallback(async () => {
@@ -771,6 +747,11 @@ export default function CassetteScreen() {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      // 録音中はプレイヤーを作らない。
+      // 録音用と再生用でオーディオの設定が競合し、
+      // 録り直したあとに音が出なくなることがある。
+      if (isCassetteRecording) return;
+
       if (!activeAudioUri) {
         await unloadSound();
         return;
@@ -806,7 +787,7 @@ export default function CassetteScreen() {
     return () => {
       mounted = false;
     };
-  }, [activeAudioUri, onPlaybackStatusUpdate, unloadSound]);
+  }, [activeAudioUri, isCassetteRecording, onPlaybackStatusUpdate, unloadSound]);
 
   useEffect(() => {
     const id = rotateProgress.addListener(({ value }) => {
@@ -871,7 +852,6 @@ export default function CassetteScreen() {
 
   useEffect(() => {
     return () => {
-      clearRecordingTimeout();
       clearMaxRecordingTimeout();
       stopArrivalSound();
       if (loopRef.current) {
@@ -884,12 +864,7 @@ export default function CassetteScreen() {
         recordingRef.current = null;
       }
     };
-  }, [
-    clearMaxRecordingTimeout,
-    clearRecordingTimeout,
-    rotateProgress,
-    stopArrivalSound,
-  ]);
+  }, [clearMaxRecordingTimeout, rotateProgress, stopArrivalSound]);
 
   useEffect(() => {
     if (!shouldPlayArrivalIntro) return;
