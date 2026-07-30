@@ -2,6 +2,7 @@ import {
   addCapsule,
   buildDefaultTitle,
   loadCapsules,
+  updateCapsule,
 } from "@/src/capsules/storage";
 import { hardwareWS, type HardwareState } from "@/src/hardware/ws";
 import {
@@ -101,8 +102,12 @@ export default function CassetteScreen() {
   // 実物のデッキと同じく録音中もテープは回る。
   // これが無いと、画面上は待機中とまったく区別がつかなかった。
   const [isCassetteRecording, setIsCassetteRecording] = useState(false);
-  // 録り終わったあと「◯◯ として保存しました」と知らせるための名前。
-  const [savedNoticeTitle, setSavedNoticeTitle] = useState<string | null>(null);
+  // カセットモードで出す短い知らせ。
+  // 「◯◯ として保存しました」と「◯◯ が届きました」の2種類を同じ見た目で出す。
+  const [notice, setNotice] = useState<{
+    title: string;
+    caption: string;
+  } | null>(null);
   const [playableCapsules, setPlayableCapsules] = useState<PlayableCapsule[]>(
     [],
   );
@@ -146,6 +151,9 @@ export default function CassetteScreen() {
     rec: false,
   });
   const hasAppliedRequestedCapsuleRef = useRef(false);
+  // すでに把握しているカプセル。ここに無いものが解禁されたら「届いた」と見なす。
+  const knownCapsuleIdsRef = useRef<Set<string>>(new Set());
+  const hasSeededKnownCapsulesRef = useRef(false);
   const requestedCapsuleId =
     typeof params.capsuleId === "string" ? params.capsuleId : "";
   // 録音のために飛んできた場合、まだ録っていないテープの名前を先に見せても
@@ -333,7 +341,7 @@ export default function CassetteScreen() {
         openedAtMs: null,
         hasTranscript: false,
       });
-      setSavedNoticeTitle(title);
+      setNotice({ title, caption: "として保存しました" });
       scheduleLatestCapsuleRefresh();
       return uri;
     } catch {
@@ -576,9 +584,53 @@ export default function CassetteScreen() {
     void refreshPlayableCapsule();
   }, [refreshPlayableCapsule]);
 
+  // 解禁されたカプセルが現れたらその場で知らせる。
+  // これが無いと、開封のたびにモバイルモードへ戻る必要があった。
+  const checkForNewlyUnlocked = useCallback(async () => {
+    const list = await loadCapsules();
+    const nowMs = Date.now();
+    const unlocked = list.filter(
+      (item) =>
+        nowMs >= item.unlockAtMs &&
+        typeof item.audioUri === "string" &&
+        item.audioUri.length > 0,
+    );
+
+    // 初回は現状を記録するだけ。既存のカプセルを「届いた」と誤認しないため。
+    if (!hasSeededKnownCapsulesRef.current) {
+      hasSeededKnownCapsulesRef.current = true;
+      unlocked.forEach((item) => knownCapsuleIdsRef.current.add(item.id));
+      return;
+    }
+
+    const arrived = unlocked.find(
+      (item) => !knownCapsuleIdsRef.current.has(item.id),
+    );
+    unlocked.forEach((item) => knownCapsuleIdsRef.current.add(item.id));
+    if (!arrived) return;
+
+    await refreshPlayableCapsule();
+    setActiveCapsuleIndex(0);
+    setNotice({ title: arrived.title, caption: "が届きました" });
+
+    if (arrived.openedAtMs === null) {
+      await updateCapsule(arrived.id, { openedAtMs: Date.now() });
+    }
+  }, [refreshPlayableCapsule]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void checkForNewlyUnlocked();
+      const id = setInterval(() => {
+        void checkForNewlyUnlocked();
+      }, 1000);
+      return () => clearInterval(id);
+    }, [checkForNewlyUnlocked]),
+  );
+
   // 保存の知らせ。出して、少し置いて、消す。
   useEffect(() => {
-    if (!savedNoticeTitle) return;
+    if (!notice) return;
 
     savedNoticeOpacity.setValue(0);
     const animation = Animated.sequence([
@@ -597,11 +649,11 @@ export default function CassetteScreen() {
       }),
     ]);
     animation.start(({ finished }) => {
-      if (finished) setSavedNoticeTitle(null);
+      if (finished) setNotice(null);
     });
 
     return () => animation.stop();
-  }, [savedNoticeOpacity, savedNoticeTitle]);
+  }, [notice, savedNoticeOpacity]);
 
   useEffect(() => {
     let mounted = true;
@@ -930,7 +982,7 @@ export default function CassetteScreen() {
           録り終わったあと、どの名前で保管したかを知らせる。
           録音前に名前を見せても、まだ存在しないテープの名前になってしまう。
         */}
-        {savedNoticeTitle ? (
+        {notice ? (
           <Animated.View
             pointerEvents="none"
             style={[
@@ -950,9 +1002,16 @@ export default function CassetteScreen() {
                 zenAntiqueSoftLoaded && styles.arrivalIntroTitleZen,
               ]}
             >
-              {savedNoticeTitle}
+              {notice.title}
             </Text>
-            <Text style={styles.savedNoticeCaption}>として保存しました</Text>
+            <Text
+              style={[
+                styles.savedNoticeCaption,
+                zenAntiqueSoftLoaded && styles.savedNoticeCaptionZen,
+              ]}
+            >
+              {notice.caption}
+            </Text>
           </Animated.View>
         ) : null}
 
@@ -1095,6 +1154,10 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "500",
     letterSpacing: 0.4,
+  },
+  savedNoticeCaptionZen: {
+    fontFamily: "ZenAntiqueSoft_400Regular",
+    fontWeight: "400",
   },
   arrivalIntroTitleZen: {
     fontFamily: "ZenAntiqueSoft_400Regular",
