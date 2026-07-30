@@ -91,7 +91,10 @@ const TAB_SWIPE_THRESHOLD = 28;
 // 「接続しましょう」のカードが画面中央あたりに来るようにしたいので、
 // 端末の高さに対する割合で決める。固定値だと機種によって位置がずれる。
 // もっと下げたい / 上げたいときはこの割合だけ触ればよい。
-const CONNECTION_GUIDE_TOP_RATIO = 0.26;
+//
+// 案内は日付やツールバーの位置も含めて画面いっぱいに重ねているため、
+// この余白は画面の上端からの距離になる。
+const CONNECTION_GUIDE_TOP_RATIO = 0.15;
 const CONNECTION_GUIDE_FADE_MS = 220;
 const PUSH_NOTICE_SLIDE_DURATION_MS = 340;
 const PUSH_NOTICE_VISIBLE_MS = 8000;
@@ -1664,61 +1667,6 @@ export default function RecordDoneScreen() {
                       </Animated.Text>
 
                       <View style={styles.centerArea}>
-                        {flow === FLOW.RECORD ? (
-                          <Animated.View
-                            pointerEvents={
-                              isCassetteConnectPromptVisible ? "auto" : "none"
-                            }
-                            style={[
-                              styles.connectionGuideLayer,
-                              { opacity: guideFaceOpacity },
-                            ]}
-                          >
-                            <ScrollView
-                              style={styles.connectionGuideScroll}
-                              contentContainerStyle={[
-                                styles.connectionGuideScrollContent,
-                                {
-                                  paddingTop:
-                                    windowHeight * CONNECTION_GUIDE_TOP_RATIO,
-                                },
-                              ]}
-                              showsVerticalScrollIndicator={false}
-                            >
-                              <View style={styles.connectionGuideCard}>
-                                <Text style={styles.connectionGuideMessage}>
-                                  カセットレコーダーと{"\n"}接続しましょう
-                                </Text>
-                              </View>
-                              <View style={styles.connectionGuideActions}>
-                                <Pressable
-                                  onPress={() => {
-                                    void openWifiSettings();
-                                  }}
-                                  style={styles.connectionGuidePrimaryAction}
-                                  hitSlop={8}
-                                >
-                                  <Text style={styles.connectionGuidePrimaryText}>
-                                    設定を開く
-                                  </Text>
-                                </Pressable>
-                                <Text style={styles.connectionGuideHelpText}>
-                                  接続方法
-                                </Text>
-                                <View style={styles.connectionGuideBottomCard}>
-                                  <Text style={styles.connectionGuideBottomText}>
-                                    1. カセットレコーダーの{"\n"}電源をいれます
-                                    {"\n\n"}
-                                    2. 「設定」アプリで{"\n"}
-                                    「_echocapsule_dev」を選ぶ
-                                    {"\n\n"}
-                                    3. パスワードを入れる
-                                  </Text>
-                                </View>
-                              </View>
-                            </ScrollView>
-                          </Animated.View>
-                        ) : null}
 
                         {flow === FLOW.RECORD ? (
                           <Animated.View
@@ -1886,6 +1834,67 @@ export default function RecordDoneScreen() {
                       flow === FLOW.RECORD &&
                       !isCassetteConnectPromptVisible ? (
                         <Text style={styles.recordGuideText}>{guideText}</Text>
+                      ) : null}
+
+                      {/*
+                        接続案内は日付やツールバーの位置も含めて覆いたいので、
+                        centerArea の中ではなく slidePane の直下に置いて
+                        画面いっぱいに重ねている。
+                      */}
+                      {flow === FLOW.RECORD ? (
+                        <Animated.View
+                          pointerEvents={
+                            isCassetteConnectPromptVisible ? "auto" : "none"
+                          }
+                          style={[
+                            styles.connectionGuideLayer,
+                            { opacity: guideFaceOpacity },
+                          ]}
+                        >
+                          <ScrollView
+                            style={styles.connectionGuideScroll}
+                            contentContainerStyle={[
+                              styles.connectionGuideScrollContent,
+                              {
+                                paddingTop:
+                                  windowHeight * CONNECTION_GUIDE_TOP_RATIO,
+                              },
+                            ]}
+                            showsVerticalScrollIndicator={false}
+                          >
+                            <View style={styles.connectionGuideCard}>
+                              <Text style={styles.connectionGuideMessage}>
+                                カセットレコーダーと{"\n"}接続しましょう
+                              </Text>
+                            </View>
+                            <View style={styles.connectionGuideActions}>
+                              <Pressable
+                                onPress={() => {
+                                  void openWifiSettings();
+                                }}
+                                style={styles.connectionGuidePrimaryAction}
+                                hitSlop={8}
+                              >
+                                <Text style={styles.connectionGuidePrimaryText}>
+                                  設定を開く
+                                </Text>
+                              </Pressable>
+                              <Text style={styles.connectionGuideHelpText}>
+                                接続方法
+                              </Text>
+                              <View style={styles.connectionGuideBottomCard}>
+                                <Text style={styles.connectionGuideBottomText}>
+                                  1. カセットレコーダーの{"\n"}電源をいれます
+                                  {"\n\n"}
+                                  2. 「設定」アプリで{"\n"}
+                                  「_echocapsule_dev」を選ぶ
+                                  {"\n\n"}
+                                  3. パスワードを入れる
+                                </Text>
+                              </View>
+                            </View>
+                          </ScrollView>
+                        </Animated.View>
                       ) : null}
                     </View>
 
