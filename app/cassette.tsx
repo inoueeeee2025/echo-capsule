@@ -25,6 +25,7 @@ import { ZenAntiqueSoft_400Regular } from "@expo-google-fonts/zen-antique-soft";
 import { BlurView } from "expo-blur";
 import { useFonts } from "expo-font";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
@@ -91,8 +92,13 @@ export default function CassetteScreen() {
   const params = useLocalSearchParams<{
     capsuleId?: string;
     showArrivalIntro?: string;
+    autoRecord?: string;
   }>();
   const [isPlaying, setIsPlaying] = useState(false);
+  // ハードの REC で録音している最中か。
+  // 実物のデッキと同じく録音中もテープは回る。
+  // これが無いと、画面上は待機中とまったく区別がつかなかった。
+  const [isCassetteRecording, setIsCassetteRecording] = useState(false);
   const [playableCapsules, setPlayableCapsules] = useState<PlayableCapsule[]>(
     [],
   );
@@ -151,6 +157,9 @@ export default function CassetteScreen() {
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  // 回転ループの継続判定で使う（コールバックの中から最新値を見るため）
+  const shouldSpinRef = useRef(false);
 
   const onPlaybackStatusUpdate = useCallback((status: AudioStatus) => {
     if (!status.isLoaded) {
@@ -270,6 +279,7 @@ export default function CassetteScreen() {
     const recording = recordingRef.current;
     recordingRef.current = null;
     isHardwareRecordingRef.current = false;
+    setIsCassetteRecording(false);
     if (recording) {
       try {
         await recording.stop();
@@ -322,6 +332,7 @@ export default function CassetteScreen() {
       return null;
     } finally {
       isHardwareRecordingRef.current = false;
+      setIsCassetteRecording(false);
     }
   }, [clearMaxRecordingTimeout, scheduleLatestCapsuleRefresh]);
 
@@ -346,6 +357,7 @@ export default function CassetteScreen() {
       recordingRef.current = recording;
       recordingStartRef.current = Date.now();
       isHardwareRecordingRef.current = true;
+      setIsCassetteRecording(true);
 
       // REC を押しっぱなしのまま放置されても止まるようにする。
       // rec 画面と違い、ここには上限がなかった。
@@ -362,6 +374,7 @@ export default function CassetteScreen() {
       }
     } catch {
       isHardwareRecordingRef.current = false;
+      setIsCassetteRecording(false);
     }
   }, [
     abortCassetteRecording,
@@ -487,7 +500,10 @@ export default function CassetteScreen() {
     } catch {}
   }, []);
 
-  useEffect(() => {
+  // 表示中のときだけボタンを受け取る。
+  // useEffect のままだと、裏に残っている録音画面と二重に反応してしまう。
+  useFocusEffect(
+    useCallback(() => {
     hardwareWS.connect();
     const unsub = hardwareWS.subscribe((s) => {
       const prev = prevHardwareStateRef.current;
@@ -518,13 +534,28 @@ export default function CassetteScreen() {
 
       prevHardwareStateRef.current = s;
     });
-    return unsub;
-  }, [
-    handleHardwarePlaybackChange,
-    moveActiveCapsuleBy,
-    startCassetteRecording,
-    stopCassetteRecording,
-  ]);
+      return unsub;
+    }, [
+      handleHardwarePlaybackChange,
+      moveActiveCapsuleBy,
+      startCassetteRecording,
+      stopCassetteRecording,
+    ]),
+  );
+
+  // 録音画面で REC を押してこの画面に飛んできた場合、そのまま録音を始める。
+  // 押しっぱなしのまま遷移してくるので、離したときに停止できるよう
+  // 「REC は押されている」状態から始める。
+  const hasAppliedAutoRecordRef = useRef(false);
+  useEffect(() => {
+    if (params.autoRecord !== "1") return;
+    if (hasAppliedAutoRecordRef.current) return;
+    hasAppliedAutoRecordRef.current = true;
+
+    prevHardwareStateRef.current = { stop: false, play: false, rec: true };
+    isRecPressedRef.current = true;
+    void startCassetteRecording();
+  }, [params.autoRecord, startCassetteRecording]);
 
   useEffect(() => {
     void setIsAudioActiveAsync(true);
@@ -581,8 +612,11 @@ export default function CassetteScreen() {
     return () => rotateProgress.removeListener(id);
   }, [rotateProgress]);
 
+  const shouldSpinWheels = isPlaying || isCassetteRecording;
+  shouldSpinRef.current = shouldSpinWheels;
+
   useEffect(() => {
-    if (isPlaying) {
+    if (shouldSpinWheels) {
       if (loopRef.current) {
         loopRef.current.stop();
         loopRef.current = null;
@@ -612,7 +646,7 @@ export default function CassetteScreen() {
           easing: Easing.linear,
           useNativeDriver: true,
         }).start(({ finished }) => {
-          if (!finished || !isPlayingRef.current) return;
+          if (!finished || !shouldSpinRef.current) return;
           startSpinLoop();
         });
       } else {
@@ -630,7 +664,7 @@ export default function CassetteScreen() {
       progressRef.current = normalized;
       rotateProgress.setValue(normalized);
     });
-  }, [isPlaying, rotateProgress]);
+  }, [rotateProgress, shouldSpinWheels]);
 
   useEffect(() => {
     return () => {
@@ -793,6 +827,26 @@ export default function CassetteScreen() {
             },
           ]}
         />
+        {/*
+          録音中の目印。実物のデッキの録音ランプと同じ役割。
+          リールは再生中も回るので、赤い点が「録音」を区別する唯一の手がかりになる。
+        */}
+        {isCassetteRecording ? (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.recordingDot,
+              {
+                width: 16 * uiScale,
+                height: 16 * uiScale,
+                borderRadius: 8 * uiScale,
+                top: 24 * uiScale,
+                right: boardLeft + 40 * uiScale,
+              },
+            ]}
+          />
+        ) : null}
+
         <View
           style={[
             styles.bottomBar,
@@ -924,6 +978,16 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     paddingBottom: 8,
     zIndex: 5,
+  },
+  recordingDot: {
+    position: "absolute",
+    backgroundColor: "#e0362a",
+    zIndex: 10,
+    shadowColor: "#e0362a",
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
   },
   bottomBarBackground: {
     position: "absolute",

@@ -666,63 +666,36 @@ export default function RecordDoneScreen() {
     await resetForNextRecording();
   }, [resetForNextRecording]);
 
-  // ハードウェアのボタンで停止したときの、停止 → 保存 → カセット画面までの流れ。
-  // stopRecording() の戻り値をそのまま persistCurrentRecording() に渡すのが要点。
-  // state 経由にすると、更新が反映される前に読んでしまい保存されない。
-  const stopAndSaveFromHardware = useCallback(async () => {
-    const result = await stopRecording();
-    if (!result) {
-      setRecordStatus(STATUS.IDLE);
-      recordStatusRef.current = STATUS.IDLE;
-      return;
-    }
+  // ハードのボタンの受け取り。
+  //
+  // useEffect ではなく useFocusEffect を使うのが要点。
+  // router.push でカセット画面に移ってもこの画面は裏に残るため、
+  // useEffect のままだと両方の画面が同じボタンに反応し、
+  // 録音機が2つ動いてしまう。
+  useFocusEffect(
+    useCallback(() => {
+      hardwareWS.connect();
 
-    const savedCapsuleId = await persistCurrentRecording({ recording: result });
-    if (!savedCapsuleId) {
-      setFlow(FLOW.REVIEW);
-      return;
-    }
+      const unsub = hardwareWS.subscribe((s) => {
+        const prev = prevHardwareStateRef.current;
+        const recDown = s.rec && !prev.rec;
 
-    await resetForNextRecording();
-    router.push({
-      pathname: "/cassette",
-      params: { capsuleId: savedCapsuleId, showArrivalIntro: "1" },
-    });
-  }, [persistCurrentRecording, resetForNextRecording, router, stopRecording]);
-
-  useEffect(() => {
-    hardwareWS.connect();
-
-    const unsub = hardwareWS.subscribe((s) => {
-      const prev = prevHardwareStateRef.current;
-      const recDown = s.rec && !prev.rec;
-      const recUp = !s.rec && prev.rec;
-      const stopDown = s.stop && !prev.stop;
-
-      if (recDown) {
-        if (isLockedToday) {
-          prevHardwareStateRef.current = s;
-          return;
+        // 録音はカセットモードで行う。
+        // ここで録音を始めてしまうと、カセットに入れる前の
+        // モバイル表示のまま録れてしまい、体験としてつながらない。
+        if (recDown && !isLockedToday) {
+          router.push({
+            pathname: "/cassette",
+            params: { autoRecord: "1" },
+          });
         }
-        isHoldingRecordRef.current = true;
-        setIsRecordPressing(true);
-        void startRecording();
-      }
-      // REC を離したときと STOP を押したときで、停止から保存までの流れは同じ。
-      // 以前は同じコードが2箇所にあり、片方だけ直す事故が起きやすかった。
-      if (recUp || stopDown) {
-        isHoldingRecordRef.current = false;
-        setIsRecordPressing(false);
-        if (recordStatusRef.current === STATUS.RECORDING) {
-          void stopAndSaveFromHardware();
-        }
-      }
 
-      prevHardwareStateRef.current = s;
-    });
+        prevHardwareStateRef.current = s;
+      });
 
-    return unsub;
-  }, [isLockedToday, startRecording, stopAndSaveFromHardware]);
+      return unsub;
+    }, [isLockedToday, router]),
+  );
 
   const retakeRecording = useCallback(async () => {
     setIsRecordPressing(false);
