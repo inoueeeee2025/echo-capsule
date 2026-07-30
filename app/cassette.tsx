@@ -547,11 +547,21 @@ export default function CassetteScreen() {
       const stopDown = s.stop && !prev.stop;
 
       // 録音中は「止める」だけを受け付ける。
-      // REC を離しても STOP を押しても止まるようにしておく。
-      // 実物のデッキは STOP で止めるので、そちらで操作されても困らないように。
+      //
+      // REC は固定式で、他のボタンを押すと機械的に上がる。
+      // つまり PLAY でも STOP でも rec:false が届くので、
+      // 「REC が上がったら止まる」で意図どおりになる。
       if (isRecPressedRef.current || isHardwareRecordingRef.current) {
         if (recUp || stopDown) {
           isRecPressedRef.current = false;
+
+          // PLAY で止めた場合、その押下は停止に使われて消える。
+          // PLAY は固定式なので押し直せず、聞けなくなってしまう。
+          // 止めたあとそのまま再生に入るようにしておく。
+          if (playDown) {
+            shouldPlayFromHardwareRef.current = true;
+          }
+
           void stopCassetteRecording();
         }
         prevHardwareStateRef.current = s;
