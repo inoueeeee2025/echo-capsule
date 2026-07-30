@@ -84,6 +84,13 @@ function formatRecordedDate(ms: number | null): string {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${WEEKDAY[d.getDay()]}`;
 }
 
+function formatDuration(totalSec: number): string {
+  const safe = Math.max(0, Math.floor(totalSec));
+  const m = String(Math.floor(safe / 60)).padStart(2, "0");
+  const sec = String(safe % 60).padStart(2, "0");
+  return `${m}:${sec}`;
+}
+
 function normalizeSpinProgress(value: number) {
   return ((value % 1) + 1) % 1;
 }
@@ -110,6 +117,13 @@ export default function CassetteScreen() {
   const [notice, setNotice] = useState<{
     title: string;
     caption: string;
+  } | null>(null);
+  // 録り終えたが、まだ保管していない録音。
+  // 聞き直して決めてもらうあいだ、ここで預かる。
+  const [pendingRecording, setPendingRecording] = useState<{
+    uri: string;
+    recordedAtMs: number;
+    durationSec: number;
   } | null>(null);
   const [playableCapsules, setPlayableCapsules] = useState<PlayableCapsule[]>(
     [],
@@ -171,6 +185,9 @@ export default function CassetteScreen() {
     return Math.min(byWidth, byHeight);
   }, [windowHeight, windowWidth]);
 
+  // 確認待ちのあいだは、保管済みのカプセルではなく預かっている録音を鳴らす。
+  const activeAudioUri = pendingRecording?.uri ?? audioUri;
+
   const boardWidth = DESIGN_WIDTH * uiScale;
   const boardLeft = Math.max(0, (windowWidth - boardWidth) / 2);
 
@@ -180,6 +197,9 @@ export default function CassetteScreen() {
 
   // 回転ループの継続判定で使う（コールバックの中から最新値を見るため）
   const shouldSpinRef = useRef(false);
+  // 確認待ちかどうか。WebSocket のコールバックから最新値を見る必要がある。
+  const isReviewingRef = useRef(false);
+  isReviewingRef.current = pendingRecording !== null;
 
   const onPlaybackStatusUpdate = useCallback((status: AudioStatus) => {
     if (!status.isLoaded) {
@@ -329,25 +349,13 @@ export default function CassetteScreen() {
       if (!uri) return null;
 
       const recordedAtMs = Date.now();
-      const unlockAtMs = computeUnlockAtMs(recordedAtMs);
-      const title = await buildDefaultTitle(recordedAtMs);
       const durationSec = Math.max(
         1,
         Math.floor((Date.now() - recordingStartRef.current) / 1000),
       );
 
-      await addCapsule({
-        id: `capsule-${recordedAtMs}-${Math.random().toString(36).slice(2, 8)}`,
-        title,
-        audioUri: uri,
-        durationSec,
-        recordedAtMs,
-        unlockAtMs,
-        openedAtMs: null,
-        hasTranscript: false,
-      });
-      setNotice({ title, caption: "として保存しました" });
-      scheduleLatestCapsuleRefresh();
+      // ここでは保存しない。聞き直して決めてもらうため、いったん預かる。
+      setPendingRecording({ uri, recordedAtMs, durationSec });
       return uri;
     } catch {
       return null;
@@ -355,7 +363,37 @@ export default function CassetteScreen() {
       isHardwareRecordingRef.current = false;
       setIsCassetteRecording(false);
     }
-  }, [clearMaxRecordingTimeout, scheduleLatestCapsuleRefresh]);
+  }, [clearMaxRecordingTimeout]);
+
+  // 確認画面で「決定」されたとき。ここで初めて保管する。
+  const confirmPendingRecording = useCallback(async () => {
+    if (!pendingRecording) return;
+
+    const { uri, recordedAtMs, durationSec } = pendingRecording;
+    const title = await buildDefaultTitle(recordedAtMs);
+
+    await addCapsule({
+      id: `capsule-${recordedAtMs}-${Math.random().toString(36).slice(2, 8)}`,
+      title,
+      audioUri: uri,
+      durationSec,
+      recordedAtMs,
+      unlockAtMs: computeUnlockAtMs(recordedAtMs),
+      openedAtMs: null,
+      hasTranscript: false,
+    });
+
+    await unloadSound();
+    setPendingRecording(null);
+    setNotice({ title, caption: "として保存しました" });
+    scheduleLatestCapsuleRefresh();
+  }, [pendingRecording, scheduleLatestCapsuleRefresh, unloadSound]);
+
+  // 確認画面で「録り直す」とき。預かっていた録音は捨てる。
+  const discardPendingRecording = useCallback(async () => {
+    await unloadSound();
+    setPendingRecording(null);
+  }, [unloadSound]);
 
   const startCassetteRecording = useCallback(async () => {
     if (isHardwareRecordingRef.current) return;
@@ -414,6 +452,7 @@ export default function CassetteScreen() {
   const moveActiveCapsuleBy = useCallback(
     (delta: number) => {
       if (!isLandscapeViewport) return;
+      if (isReviewingRef.current) return;
       if (playableCapsules.length <= 1) return;
       if (isProjectSlideTransitioningRef.current) return;
 
@@ -527,6 +566,31 @@ export default function CassetteScreen() {
       const recUp = !s.rec && prev.rec;
       const stopDown = s.stop && !prev.stop;
 
+      // 確認待ちのあいだは、同じボタンでも意味が変わる。
+      //   PLAY → 録った音を聞く / REC → 録り直す / STOP → 決定して保管
+      if (isReviewingRef.current) {
+        if (playDown) handleHardwarePlaybackChange(true);
+        if (playUp) handleHardwarePlaybackChange(false);
+        if (recDown) {
+          void (async () => {
+            await discardPendingRecording();
+            isRecPressedRef.current = true;
+            await startCassetteRecording();
+          })();
+        }
+        if (recUp) {
+          isRecPressedRef.current = false;
+          void stopCassetteRecording();
+        }
+        if (stopDown) {
+          handleHardwarePlaybackChange(false);
+          void confirmPendingRecording();
+        }
+
+        prevHardwareStateRef.current = s;
+        return;
+      }
+
       if (playDown) {
         handleHardwarePlaybackChange(true);
       }
@@ -550,6 +614,8 @@ export default function CassetteScreen() {
     });
       return unsub;
     }, [
+      confirmPendingRecording,
+      discardPendingRecording,
       handleHardwarePlaybackChange,
       moveActiveCapsuleBy,
       startCassetteRecording,
@@ -629,6 +695,10 @@ export default function CassetteScreen() {
   // 解禁されたカプセルが現れたらその場で知らせる。
   // これが無いと、開封のたびにモバイルモードへ戻る必要があった。
   const checkForNewlyUnlocked = useCallback(async () => {
+    // 確認中に割り込むと、聞いている音が差し替わってしまう。
+    // 次の巡回で拾えるので、ここでは何もしない。
+    if (isReviewingRef.current) return;
+
     const list = await loadCapsules();
     const nowMs = Date.now();
     const unlocked = list.filter(
@@ -701,13 +771,16 @@ export default function CassetteScreen() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      if (!audioUri) {
+      if (!activeAudioUri) {
         await unloadSound();
         return;
       }
       try {
         await unloadSound();
-        const player = createAudioPlayer({ uri: audioUri }, { updateInterval: 200 });
+        const player = createAudioPlayer(
+          { uri: activeAudioUri },
+          { updateInterval: 200 },
+        );
         const sub = player.addListener(
           "playbackStatusUpdate",
           onPlaybackStatusUpdate,
@@ -733,7 +806,7 @@ export default function CassetteScreen() {
     return () => {
       mounted = false;
     };
-  }, [audioUri, onPlaybackStatusUpdate, unloadSound]);
+  }, [activeAudioUri, onPlaybackStatusUpdate, unloadSound]);
 
   useEffect(() => {
     const id = rotateProgress.addListener(({ value }) => {
@@ -1018,6 +1091,45 @@ export default function CassetteScreen() {
         </View>
 
         {/*
+          録り終えたあとの確認。ここで保管するか録り直すかを決める。
+          スマホは筐体の中にあるので、どのボタンが何をするかを画面に出す。
+        */}
+        {pendingRecording ? (
+          <View pointerEvents="none" style={styles.reviewOverlay}>
+            <BlurView
+              intensity={34}
+              tint="light"
+              style={styles.arrivalIntroBlur}
+            />
+            <Text style={styles.reviewDuration}>
+              {formatDuration(pendingRecording.durationSec)}
+            </Text>
+            <Text
+              style={[
+                styles.reviewHeading,
+                zenAntiqueSoftLoaded && styles.arrivalIntroTitleZen,
+              ]}
+            >
+              この声でよいですか
+            </Text>
+            <View style={styles.reviewGuideList}>
+              <Text style={styles.reviewGuideRow}>
+                <Text style={styles.reviewGuideKey}>PLAY</Text>
+                {"　聞いてみる"}
+              </Text>
+              <Text style={styles.reviewGuideRow}>
+                <Text style={styles.reviewGuideKey}>REC</Text>
+                {"　録り直す"}
+              </Text>
+              <Text style={styles.reviewGuideRow}>
+                <Text style={styles.reviewGuideKey}>STOP</Text>
+                {"　保管する"}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
+        {/*
           録り終わったあと、どの名前で保管したかを知らせる。
           録音前に名前を見せても、まだ存在しないテープの名前になってしまう。
         */}
@@ -1186,6 +1298,45 @@ const styles = StyleSheet.create({
     fontSize: 50,
     fontWeight: "700",
     letterSpacing: 0.2,
+  },
+  reviewOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: 22,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  reviewDuration: {
+    color: "#6f7178",
+    fontSize: 17,
+    fontWeight: "500",
+    letterSpacing: 0.4,
+    marginBottom: 10,
+  },
+  reviewHeading: {
+    color: "#111217",
+    fontSize: 34,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+    marginBottom: 22,
+  },
+  reviewGuideList: {
+    alignItems: "flex-start",
+    gap: 6,
+  },
+  reviewGuideRow: {
+    color: "#3d3f47",
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: "500",
+  },
+  reviewGuideKey: {
+    color: "#111217",
+    fontWeight: "800",
+    letterSpacing: 0.6,
   },
   savedNoticeCaption: {
     marginTop: 14,
