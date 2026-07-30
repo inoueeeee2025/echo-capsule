@@ -1550,50 +1550,64 @@ export default function RecordDoneScreen() {
                     未接続ならペアリング案内へ、接続済みならそのままカセットモードへ。
                     スマホを筐体に入れる前にカセットモードにしておくのが想定の流れ。
                   */}
-                  {flow === FLOW.RECORD &&
-                  activeTab === "rec" &&
-                  !isCassetteConnectPromptVisible ? (
-                    <Pressable
-                      onPress={() => {
-                        if (isHardwareWifiConnected) {
-                          openCassetteMode();
-                        } else {
-                          transitionCassetteConnectPrompt(true);
+                  {flow === FLOW.RECORD && activeTab === "rec" ? (
+                    <>
+                      <Animated.View
+                        pointerEvents={
+                          isCassetteConnectPromptVisible ? "none" : "auto"
                         }
-                      }}
-                      hitSlop={10}
-                      style={styles.cassetteTopButton}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        isHardwareWifiConnected
-                          ? "カセットモードへ"
-                          : "カセットレコーダーと接続する"
-                      }
-                    >
-                      <CassetteButtonSvg
-                        width={styles.cassetteTopButtonIcon.width}
-                        height={styles.cassetteTopButtonIcon.height}
-                        style={styles.cassetteTopButtonIcon}
-                      />
-                    </Pressable>
-                  ) : null}
+                        style={[
+                          styles.cassetteTopButton,
+                          { opacity: recordFaceOpacity },
+                        ]}
+                      >
+                        <Pressable
+                          onPress={() => {
+                            if (isHardwareWifiConnected) {
+                              openCassetteMode();
+                            } else {
+                              transitionCassetteConnectPrompt(true);
+                            }
+                          }}
+                          hitSlop={10}
+                          accessibilityRole="button"
+                          accessibilityLabel={
+                            isHardwareWifiConnected
+                              ? "カセットモードへ"
+                              : "カセットレコーダーと接続する"
+                          }
+                        >
+                          <CassetteButtonSvg
+                            width={styles.cassetteTopButtonIcon.width}
+                            height={styles.cassetteTopButtonIcon.height}
+                            style={styles.cassetteTopButtonIcon}
+                          />
+                        </Pressable>
+                      </Animated.View>
 
-                  {flow === FLOW.RECORD &&
-                  activeTab === "rec" &&
-                  isCassetteConnectPromptVisible ? (
-                    <Pressable
-                      onPress={() => transitionCassetteConnectPrompt(false)}
-                      hitSlop={10}
-                      style={styles.smartphoneTopButton}
-                      accessibilityRole="button"
-                      accessibilityLabel="録音画面に戻る"
-                    >
-                      <SmartphoneBackSvg
-                        width={styles.smartphoneTopButtonBg.width}
-                        height={styles.smartphoneTopButtonBg.height}
-                        style={styles.smartphoneTopButtonBg}
-                      />
-                    </Pressable>
+                      <Animated.View
+                        pointerEvents={
+                          isCassetteConnectPromptVisible ? "auto" : "none"
+                        }
+                        style={[
+                          styles.smartphoneTopButton,
+                          { opacity: guideFaceOpacity },
+                        ]}
+                      >
+                        <Pressable
+                          onPress={() => transitionCassetteConnectPrompt(false)}
+                          hitSlop={10}
+                          accessibilityRole="button"
+                          accessibilityLabel="録音画面に戻る"
+                        >
+                          <SmartphoneBackSvg
+                            width={styles.smartphoneTopButtonBg.width}
+                            height={styles.smartphoneTopButtonBg.height}
+                            style={styles.smartphoneTopButtonBg}
+                          />
+                        </Pressable>
+                      </Animated.View>
+                    </>
                   ) : null}
 
                   {flow === FLOW.REVIEW && activeTab === "rec" ? (
@@ -1609,14 +1623,23 @@ export default function RecordDoneScreen() {
                     </View>
                   ) : null}
 
-                  {!isCassetteConnectPromptVisible ? (
+                  {/*
+                    案内表示中も消さずに薄くする。消してしまうと高さが変わり、
+                    まだ見えている録音ボタンが動いてしまう。
+                  */}
+                  <Animated.View
+                    pointerEvents={
+                      isCassetteConnectPromptVisible ? "none" : "auto"
+                    }
+                    style={{ opacity: recordFaceOpacity }}
+                  >
                     <RecordToolbar
                       active={activeTab}
                       onPressRec={() => setActiveTab("rec")}
                       onPressArchive={() => setActiveTab("archive")}
                       hasUnopenedInArchive={hasUnopenedInArchive}
                     />
-                  ) : null}
+                  </Animated.View>
                 </View>
 
                 <View
@@ -1633,11 +1656,12 @@ export default function RecordDoneScreen() {
                     ]}
                   >
                     <View style={[styles.slidePane, { width: slideWidth }]}>
-                      {!isCassetteConnectPromptVisible ? (
-                        <Text style={styles.dateText}>
-                          {formatDisplayDate(now)}
-                        </Text>
-                      ) : null}
+                      {/* ツールバーと同じ理由で、消さずに薄くする */}
+                      <Animated.Text
+                        style={[styles.dateText, { opacity: recordFaceOpacity }]}
+                      >
+                        {formatDisplayDate(now)}
+                      </Animated.Text>
 
                       <View style={styles.centerArea}>
                         {flow === FLOW.RECORD ? (
