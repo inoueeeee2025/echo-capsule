@@ -59,7 +59,8 @@ const ARRIVAL_INTRO_SLIDE_DISTANCE_RATIO = 0.36;
 // カプセルが未確定の状態でも登場演出を出すか。デモでは常に見せたいので DEMO_MODE に従う。
 const FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD = DEMO_MODE;
 const PROJECT_SWIPE_THRESHOLD = 28;
-const PROJECT_SLIDE_TRANSITION_MS = 180;
+const PROJECT_SLIDE_OUT_MS = 170;
+const PROJECT_SLIDE_SWAP_MS = 40;
 const ARRIVAL_SOUND_FILE = require("../assets/soun/決定ボタンを押す40.mp3");
 const ARRIVAL_SOUND_CLEANUP_MS = 1200;
 // これより短い録音は中身がほとんど無く、再生しても何も聞こえない。
@@ -465,6 +466,12 @@ export default function CassetteScreen() {
   // そのため演出を出さない場面では画面がずれたまま戻らず、
   // 音だけ鳴って表示が真っ白になっていた。
   // 演出と切り離し、スライドは自力で往復させる。
+  // カプセルの送り。
+  //
+  // 以前は「横に出す → 中身を差し替える → 横から入れる」の2段構えで、
+  // 折り返しで一度止まるため途切れて見えていた。
+  // 出したまま中身を差し替え、同じ勢いのまま入れてくることで
+  // 1回のまとまった動きに見せる。
   const moveActiveCapsuleBy = useCallback(
     (delta: number) => {
       if (!isLandscapeViewport) return;
@@ -477,32 +484,35 @@ export default function CassetteScreen() {
 
       isProjectSlideTransitioningRef.current = true;
       const outTo = delta > 0 ? -windowWidth : windowWidth;
-      const inFrom = -outTo;
+
       pageSlideX.stopAnimation();
-      Animated.timing(pageSlideX, {
-        toValue: outTo,
-        duration: PROJECT_SLIDE_TRANSITION_MS,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        pageSlideX.setValue(inFrom);
-        setActiveCapsuleIndex(next);
-
-        if (!finished) {
-          pageSlideX.setValue(0);
-          isProjectSlideTransitioningRef.current = false;
-          return;
-        }
-
+      Animated.sequence([
+        // 出ていくときは加速。止まる感じを出さない。
         Animated.timing(pageSlideX, {
-          toValue: 0,
-          duration: PROJECT_SLIDE_TRANSITION_MS,
-          easing: Easing.out(Easing.cubic),
+          toValue: outTo,
+          duration: PROJECT_SLIDE_OUT_MS,
+          easing: Easing.in(Easing.quad),
           useNativeDriver: true,
-        }).start(() => {
-          isProjectSlideTransitioningRef.current = false;
-        });
+        }),
+        // 差し替えのための待ち。0 だと描画が間に合わず一瞬ちらつく。
+        Animated.delay(PROJECT_SLIDE_SWAP_MS),
+        // 入ってくるときは減速。行き過ぎてから戻る動きで勢いを残す。
+        Animated.spring(pageSlideX, {
+          toValue: 0,
+          damping: 22,
+          stiffness: 190,
+          mass: 0.9,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        isProjectSlideTransitioningRef.current = false;
       });
+
+      // 画面の外に出きったところで中身を差し替える。
+      setTimeout(() => {
+        pageSlideX.setValue(-outTo);
+        setActiveCapsuleIndex(next);
+      }, PROJECT_SLIDE_OUT_MS);
     },
     [
       activeCapsuleIndex,
