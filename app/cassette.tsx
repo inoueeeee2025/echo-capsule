@@ -5,7 +5,7 @@ import {
   updateCapsule,
 } from "@/src/capsules/storage";
 import { hardwareWS, type HardwareState } from "@/src/hardware/ws";
-import { computeUnlockAtMs, DEMO_MODE, MAX_RECORDING_MS } from "@/src/config";
+import { computeUnlockAtMs, MAX_RECORDING_MS } from "@/src/config";
 import {
   createAudioPlayer,
   RecordingPresets,
@@ -51,18 +51,15 @@ const COVER_LEFT = 16;
 const COVER_TOP = 28;
 const COVER_WIDTH = 729;
 const COVER_HEIGHT = 290;
-const ARRIVAL_INTRO_SLIDE_MS = 420;
-const ARRIVAL_INTRO_HOLD_MS = 900;
-const ARRIVAL_INTRO_FADE_OUT_MS = 420;
-const ARRIVAL_INTRO_SLIDE_DISTANCE_RATIO = 0.36;
-// カプセルが未確定の状態でも登場演出を出すか。デモでは常に見せたいので DEMO_MODE に従う。
-const FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD = DEMO_MODE;
 const PROJECT_SWIPE_THRESHOLD = 28;
 // カセットに貼る名札。実物のラベルのように、リールの間に収まる大きさにする。
 // 画像の縦横比（267:75）に合わせてあるので、変えるときは両方そろえること。
 const TAPE_LABEL_WIDTH = 252;
 const TAPE_LABEL_HEIGHT = 71;
 const TAPE_LABEL_FONT_SIZE = 28;
+// カセット上での貼り位置（デザイン座標 852x393 のなかでの左上）
+const TAPE_LABEL_LEFT = 300;
+const TAPE_LABEL_TOP = 141;
 const PROJECT_SLIDE_OUT_MS = 170;
 const PROJECT_SLIDE_SWAP_MS = 40;
 const ARRIVAL_SOUND_FILE = require("../assets/soun/決定ボタンを押す40.mp3");
@@ -170,12 +167,9 @@ export default function CassetteScreen() {
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [activeCapsuleId, setActiveCapsuleId] = useState<string>("");
   const [activeCapsuleTitle, setActiveCapsuleTitle] = useState("");
-  const [isArrivalIntroVisible, setIsArrivalIntroVisible] = useState(false);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const rotateProgress = useRef(new Animated.Value(0)).current;
   const pageSlideX = useRef(new Animated.Value(0)).current;
-  const arrivalIntroTranslateX = useRef(new Animated.Value(0)).current;
-  const arrivalIntroOpacity = useRef(new Animated.Value(0)).current;
   const savedNoticeOpacity = useRef(new Animated.Value(0)).current;
   const isProjectSlideTransitioningRef = useRef(false);
   const moveActiveCapsuleByRef = useRef<(delta: number) => void>(() => {});
@@ -215,9 +209,6 @@ export default function CassetteScreen() {
   // 同じ画面に戻る場合も録音を始められるよう、呼ぶ側は毎回違う値を渡してくる。
   const autoRecordToken =
     typeof params.autoRecord === "string" ? params.autoRecord : "";
-  // 録音のために飛んできた場合、まだ録っていないテープの名前を先に見せても
-  // 意味がないので登場演出は出さない。既存カプセルを開いたときだけ出す。
-  const shouldPlayArrivalIntro = autoRecordToken.length === 0;
 
   const uiScale = useMemo(() => {
     const byWidth = windowWidth / DESIGN_WIDTH;
@@ -993,60 +984,6 @@ export default function CassetteScreen() {
     };
   }, [clearMaxRecordingTimeout, rotateProgress, stopArrivalSound]);
 
-  useEffect(() => {
-    if (!shouldPlayArrivalIntro) return;
-    if (!activeCapsuleId && !FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD) return;
-    if (!activeCapsuleTitle && !FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD) return;
-    setIsArrivalIntroVisible(true);
-    arrivalIntroTranslateX.stopAnimation();
-    arrivalIntroOpacity.stopAnimation();
-    const slideDistance = Math.max(140, windowWidth * ARRIVAL_INTRO_SLIDE_DISTANCE_RATIO);
-    arrivalIntroTranslateX.setValue(slideDistance);
-    arrivalIntroOpacity.setValue(0);
-
-    Animated.sequence([
-      Animated.parallel([
-        Animated.timing(arrivalIntroTranslateX, {
-          toValue: 0,
-          duration: ARRIVAL_INTRO_SLIDE_MS,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(arrivalIntroOpacity, {
-          toValue: 1,
-          duration: ARRIVAL_INTRO_SLIDE_MS,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.delay(ARRIVAL_INTRO_HOLD_MS),
-      Animated.parallel([
-        Animated.timing(arrivalIntroTranslateX, {
-          toValue: -slideDistance,
-          duration: ARRIVAL_INTRO_FADE_OUT_MS,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(arrivalIntroOpacity, {
-          toValue: 0,
-          duration: ARRIVAL_INTRO_FADE_OUT_MS,
-          easing: Easing.in(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-    ]).start(() => {
-      setIsArrivalIntroVisible(false);
-    });
-  }, [
-    activeCapsuleId,
-    activeCapsuleTitle,
-    arrivalIntroOpacity,
-    arrivalIntroTranslateX,
-    pageSlideX,
-    shouldPlayArrivalIntro,
-    windowWidth,
-  ]);
-
   const spin = rotateProgress.interpolate({
     inputRange: [0, 1],
     outputRange: ["0deg", "360deg"],
@@ -1055,7 +992,6 @@ export default function CassetteScreen() {
     inputRange: [0, 1],
     outputRange: ["0deg", "-360deg"],
   });
-  const showArrivalIntro = isArrivalIntroVisible;
 
   return (
     <AnimatedImageBackground
@@ -1100,6 +1036,28 @@ export default function CassetteScreen() {
               style={[styles.wheelImage, { transform: [{ rotate: spin }] }]}
             />
           </View>
+          {/*
+            カセットに貼られた名札。演出ではなく、実物のラベルと同じく
+            そのカプセルを見ているあいだずっと貼られている。
+          */}
+          {activeCapsuleTitle ? (
+            <View
+              style={[
+                styles.tapeLabelSlot,
+                {
+                  left: boardLeft + TAPE_LABEL_LEFT * uiScale,
+                  top: TAPE_LABEL_TOP * uiScale,
+                },
+              ]}
+            >
+              <TapeLabel
+                title={activeCapsuleTitle}
+                scale={uiScale}
+                fontReady={crayonLoaded}
+              />
+            </View>
+          ) : null}
+
           <Image
             source={require("../assets/images/cassetteCover.png")}
             resizeMode="cover"
@@ -1268,31 +1226,6 @@ export default function CassetteScreen() {
           </Animated.View>
         ) : null}
 
-        {showArrivalIntro ? (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.arrivalIntroOverlay,
-              {
-                opacity: arrivalIntroOpacity,
-                transform: [
-                  {
-                    translateX: Animated.add(
-                      arrivalIntroTranslateX,
-                      Animated.multiply(pageSlideX, -1),
-                    ),
-                  },
-                ],
-              },
-            ]}
-          >
-            <TapeLabel
-              title={activeCapsuleTitle || "プロジェクト名"}
-              scale={uiScale}
-              fontReady={crayonLoaded}
-            />
-          </Animated.View>
-        ) : null}
         </SafeAreaView>
       </GestureDetector>
     </AnimatedImageBackground>
@@ -1375,6 +1308,11 @@ const styles = StyleSheet.create({
     zIndex: 20,
     justifyContent: "center",
     alignItems: "center",
+  },
+  tapeLabelSlot: {
+    position: "absolute",
+    // カバーやリールより手前に置く
+    zIndex: 6,
   },
   tapeLabel: {
     alignItems: "center",
