@@ -321,10 +321,16 @@ export default function KaihuuScreen() {
   const recGuideText = "録音ボタンを押して録音しましょう";
 
 
+  /**
+   * 録音へ。
+   *
+   * この画面にも録音タブの見た目があるが、中身は複製で録音できない。
+   * 録音を持っているのは rec 画面だけなので、そちらへ渡す。
+   * navigate なので、既にある rec 画面に戻るだけで積み上がらない。
+   */
   const switchToRecTab = useCallback(() => {
-    setToolbarTab("rec");
-    setActiveTab("rec");
-  }, []);
+    router.navigate("/record/rec");
+  }, [router]);
 
   const switchToArchiveTab = useCallback(
     (wasArchiveTab: boolean) => {
