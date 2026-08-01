@@ -656,6 +656,20 @@ export default function CassetteScreen() {
     handleHardwarePlaybackChange(!playing);
   }, [handleHardwarePlaybackChange]);
 
+  /**
+   * 確認をやめてホームに戻る。
+   *
+   * ハードのボタンだけだと、録り直しか保管のどちらかを選ぶまで
+   * この画面から抜けられない。手が滑って録れてしまった時の逃げ道。
+   * 預かっている録音は保管しないので、そのまま捨てる。
+   */
+  const leaveReviewToHome = useCallback(() => {
+    handleHardwarePlaybackChange(false);
+    setPendingRecording(null);
+    // push だと録音画面が積み上がるので、既にあるものへ戻す。
+    router.navigate("/record/rec");
+  }, [handleHardwarePlaybackChange, router]);
+
   // 表示中のときだけボタンを受け取る。
   // useEffect のままだと、裏に残っている録音画面と二重に反応してしまう。
   useFocusEffect(
@@ -1231,6 +1245,31 @@ export default function CassetteScreen() {
         ) : null}
 
         {/*
+          確認をやめる口。
+          オーバーレイは pointerEvents="none" で触れないので、
+          兄弟として一段手前に置く。
+        */}
+        {pendingRecording && !isCassetteRecording ? (
+          <Pressable
+            onPress={leaveReviewToHome}
+            hitSlop={12}
+            style={[
+              styles.reviewBackButton,
+              {
+                top: 12 * uiScale,
+                left: boardLeft + 24 * uiScale,
+              },
+            ]}
+          >
+            <Image
+              source={require("../assets/images/backButton.png")}
+              resizeMode="contain"
+              style={{ width: 52 * uiScale, height: 52 * uiScale }}
+            />
+          </Pressable>
+        ) : null}
+
+        {/*
           録り終わったあと、どの名前で保管したかを知らせる。
           録音前に名前を見せても、まだ存在しないテープの名前になってしまう。
         */}
@@ -1404,6 +1443,12 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 22,
     justifyContent: "center",
+    alignItems: "center",
+  },
+  reviewBackButton: {
+    position: "absolute",
+    // 確認オーバーレイ（22）より手前でないと押せない
+    zIndex: 23,
     alignItems: "center",
   },
   reviewDuration: {
