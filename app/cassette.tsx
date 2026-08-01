@@ -5,6 +5,7 @@ import {
   updateCapsule,
 } from "@/src/capsules/storage";
 import { hardwareWS, type HardwareState } from "@/src/hardware/ws";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { computeUnlockAtMs, MAX_RECORDING_MS } from "@/src/config";
 import {
   createAudioPlayer,
@@ -1261,10 +1262,14 @@ export default function CassetteScreen() {
               },
             ]}
           >
-            <Image
-              source={require("../assets/images/backButton.png")}
-              resizeMode="contain"
-              style={{ width: 52 * uiScale, height: 52 * uiScale }}
+            {/*
+              下部バーの back ボタンはカセットの造形に合わせた絵なので、
+              確認オーバーレイの上では浮いてしまう。ここは素の矢印にする。
+            */}
+            <Ionicons
+              name="arrow-back"
+              size={Math.round(34 * uiScale)}
+              color="#111217"
             />
           </Pressable>
         ) : null}
