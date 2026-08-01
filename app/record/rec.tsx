@@ -611,7 +611,9 @@ export default function RecordDoneScreen() {
     const durationMs = source?.durationMs ?? elapsedMs;
     const typedName = (options?.nameOverride ?? projectName).trim();
     const normalized = typedName || (await buildDefaultTitle(recordedAtMs));
-    const unlockAtMs = computeUnlockAtMs(recordedAtMs);
+    // 待ち時間の起点は保管した瞬間。テープ名を入れている間も
+    // 録音時刻から数えてしまうと、保管した直後に届いてしまう。
+    const unlockAtMs = computeUnlockAtMs(Date.now());
 
     const savedCapsuleId = `capsule-${recordedAtMs}-${Math.random().toString(36).slice(2, 8)}`;
     await addCapsule({

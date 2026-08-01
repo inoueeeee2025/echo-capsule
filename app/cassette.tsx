@@ -380,6 +380,9 @@ export default function CassetteScreen() {
     if (!pendingRecording) return;
 
     const { uri, recordedAtMs, durationSec } = pendingRecording;
+    // 待ち時間の起点は保管した瞬間。録音した時刻から数えると、
+    // 聞き直していた時間のぶんだけ早く届いてしまう。
+    const storedAtMs = Date.now();
     const title = await buildDefaultTitle(recordedAtMs);
 
     await addCapsule({
@@ -388,7 +391,7 @@ export default function CassetteScreen() {
       audioUri: uri,
       durationSec,
       recordedAtMs,
-      unlockAtMs: computeUnlockAtMs(recordedAtMs),
+      unlockAtMs: computeUnlockAtMs(storedAtMs),
       openedAtMs: null,
       hasTranscript: false,
     });

@@ -32,16 +32,20 @@ export const DEMO_UNLOCK_DELAY_MS = 30 * 1000;
 export const UNLOCK_AFTER_YEARS = 1;
 
 /**
- * 録音時刻から、そのカプセルが開封可能になる時刻を求める。
+ * 保管した時刻から、そのカプセルが開封可能になる時刻を求める。
+ *
+ * 起点は「録音した時刻」ではなく「保管した時刻」。
+ * 録り終えてから聞き直して決めるまでの時間も待ち時間に含めてしまうと、
+ * 保管した直後に届いてしまう。
  *
  * 保存処理は rec 画面とカセット画面の2箇所にあるため、
  * 計算がずれないよう必ずこの関数を通すこと。
  */
-export function computeUnlockAtMs(recordedAtMs: number): number {
+export function computeUnlockAtMs(storedAtMs: number): number {
   if (DEMO_MODE) {
-    return recordedAtMs + DEMO_UNLOCK_DELAY_MS;
+    return storedAtMs + DEMO_UNLOCK_DELAY_MS;
   }
-  const unlockDate = new Date(recordedAtMs);
+  const unlockDate = new Date(storedAtMs);
   unlockDate.setFullYear(unlockDate.getFullYear() + UNLOCK_AFTER_YEARS);
   return unlockDate.getTime();
 }
