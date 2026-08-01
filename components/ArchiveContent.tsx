@@ -1,12 +1,16 @@
 import PlayCircleSvg from "@/assets/images/Play_circle.svg";
 import TrashSvg from "@/assets/images/Trash.svg";
-import { hardwareWS } from "@/src/hardware/ws";
 import {
   loadCapsules,
   removeCapsule,
   toDateKeyFromMs,
   updateCapsule,
 } from "@/src/capsules/storage";
+import {
+  createAudioPlayer,
+  setAudioModeAsync,
+  type AudioPlayer,
+} from "expo-audio";
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -139,25 +143,64 @@ export default function ArchiveContent({
   const [isDeleting, setIsDeleting] = useState(false);
   const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
   const openSwipeIdRef = useRef<string | null>(null);
-  const openCassetteScreen = (item: RecordingItem) => {
+  const inlinePlayerRef = useRef<AudioPlayer | null>(null);
+  const [playingItemId, setPlayingItemId] = useState<string | null>(null);
+  // 一覧の再生ボタン。画面を移らず、その場で鳴らす。
+  // 聞きたいだけなのに毎回別の画面へ飛ばされるのは手数が多い。
+  const stopInlinePlayback = useCallback(() => {
+    const player = inlinePlayerRef.current;
+    inlinePlayerRef.current = null;
+    setPlayingItemId(null);
+    if (!player) return;
+    try {
+      player.pause();
+    } catch {}
+    try {
+      player.remove();
+    } catch {}
+  }, []);
+
+  const togglePlayItem = (item: RecordingItem) => {
     if (item.isLocked) return;
+
+    // 鳴っているものをもう一度押したら止める
+    if (playingItemId === item.id) {
+      stopInlinePlayback();
+      return;
+    }
+
     void (async () => {
+      stopInlinePlayback();
+
+      const capsules = await loadCapsules();
+      const capsule = capsules.find((c) => c.id === item.id);
+      if (!capsule?.audioUri) return;
+
       if (item.isUnopened) {
         await updateCapsule(item.id, { openedAtMs: Date.now() });
         void reloadCapsules();
       }
-      const shouldOpenCassetteFirst = await hardwareWS.waitUntilConnected();
-      if (shouldOpenCassetteFirst) {
-        router.navigate({
-          pathname: "/cassette",
-          params: { capsuleId: item.id },
+
+      try {
+        await setAudioModeAsync({
+          allowsRecording: false,
+          playsInSilentMode: true,
         });
-        return;
+        const player = createAudioPlayer(
+          { uri: capsule.audioUri },
+          { updateInterval: 250 },
+        );
+        inlinePlayerRef.current = player;
+        setPlayingItemId(item.id);
+        // 鳴り終わったら自動で止める
+        player.addListener("playbackStatusUpdate", (status) => {
+          if (!status.isLoaded) return;
+          if (status.didJustFinish) stopInlinePlayback();
+        });
+        player.play();
+      } catch {
+        stopInlinePlayback();
       }
-      router.push({
-        pathname: "/record/kaihuu",
-        params: { capsuleId: item.id },
-      });
     })();
   };
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
@@ -190,6 +233,9 @@ export default function ArchiveContent({
       mounted = false;
     };
   }, [reloadCapsules]);
+
+  // 画面を離れたら鳴っている音を止める
+  useEffect(() => stopInlinePlayback, [stopInlinePlayback]);
 
   useFocusEffect(
     useCallback(() => {
@@ -562,11 +608,17 @@ export default function ArchiveContent({
                   </Text>
                   <Pressable
                     style={styles.playButton}
-                    onPress={() => openCassetteScreen(selectedDateItems[0])}
+                    onPress={() => togglePlayItem(selectedDateItems[0])}
                     hitSlop={6}
                   >
                     {isSvgReady ? (
-                      <PlayCircleSvg width={18} height={18} />
+                      <PlayCircleSvg
+                        width={18}
+                        height={18}
+                        opacity={
+                          playingItemId === selectedDateItems[0].id ? 0.45 : 1
+                        }
+                      />
                     ) : (
                       <Text style={styles.playIcon}>{">"}</Text>
                     )}
@@ -608,11 +660,15 @@ export default function ArchiveContent({
 
               <Pressable
                 style={styles.playButton}
-                onPress={() => openCassetteScreen(item)}
+                onPress={() => togglePlayItem(item)}
                 hitSlop={6}
               >
                 {isSvgReady ? (
-                  <PlayCircleSvg width={18} height={18} />
+                  <PlayCircleSvg
+                    width={18}
+                    height={18}
+                    opacity={playingItemId === item.id ? 0.45 : 1}
+                  />
                 ) : (
                   <Text style={styles.playIcon}>{">"}</Text>
                 )}
