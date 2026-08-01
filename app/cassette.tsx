@@ -54,12 +54,15 @@ const COVER_HEIGHT = 290;
 const PROJECT_SWIPE_THRESHOLD = 28;
 // カセットに貼る名札。実物のラベルのように、リールの間に収まる大きさにする。
 // 画像の縦横比（267:75）に合わせてあるので、変えるときは両方そろえること。
-const TAPE_LABEL_WIDTH = 252;
-const TAPE_LABEL_HEIGHT = 71;
-const TAPE_LABEL_FONT_SIZE = 28;
+// 画像そのままの縦横比（267:75）。崩すとテープが伸びて見える。
+const TAPE_LABEL_WIDTH = 268;
+const TAPE_LABEL_HEIGHT = 75;
+const TAPE_LABEL_FONT_SIZE = 34;
+// テープ画像に元から入っている傾き。文字もこれに合わせないと浮いて見える。
+const TAPE_LABEL_TILT_DEG = 3;
 // カセット上での貼り位置（デザイン座標 852x393 のなかでの左上）
-const TAPE_LABEL_LEFT = 300;
-const TAPE_LABEL_TOP = 141;
+const TAPE_LABEL_LEFT = 290;
+const TAPE_LABEL_TOP = 140;
 const PROJECT_SLIDE_OUT_MS = 170;
 const PROJECT_SLIDE_SWAP_MS = 40;
 const ARRIVAL_SOUND_FILE = require("../assets/soun/決定ボタンを押す40.mp3");
@@ -1040,7 +1043,7 @@ export default function CassetteScreen() {
             カセットに貼られた名札。演出ではなく、実物のラベルと同じく
             そのカプセルを見ているあいだずっと貼られている。
           */}
-          {activeCapsuleTitle ? (
+          {activeCapsuleTitle && !isCassetteRecording ? (
             <View
               style={[
                 styles.tapeLabelSlot,
@@ -1324,12 +1327,14 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   tapeLabelText: {
-    // テープの傾きに合わせて、書いた文字も少し傾ける
-    transform: [{ rotate: "-2.2deg" }],
+    // テープ画像は右下がりに傾いているので、文字も同じ向きに倒す。
+    // 逆向きだと、貼った紙の上に書いたようには見えない。
+    transform: [{ rotate: `${TAPE_LABEL_TILT_DEG}deg` }],
     color: "#2b2521",
     fontWeight: "400",
-    letterSpacing: 2,
-    paddingHorizontal: 16,
+    letterSpacing: 4,
+    paddingHorizontal: 20,
+    textAlign: "center",
   },
   tapeLabelTextFont: {
     fontFamily: "Crayon",
