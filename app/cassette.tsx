@@ -94,9 +94,46 @@ function normalizeSpinProgress(value: number) {
   return ((value % 1) + 1) % 1;
 }
 
+/** テープに名前を書いた札。カセットにラベルを貼った見立て。 */
+function TapeLabel({
+  title,
+  scale,
+  fontReady,
+}: {
+  title: string;
+  scale: number;
+  fontReady: boolean;
+}) {
+  return (
+    <View
+      style={[
+        styles.tapeLabel,
+        { width: 520 * scale, height: 146 * scale },
+      ]}
+    >
+      <Image
+        source={require("../assets/images/maskingTape.png")}
+        resizeMode="stretch"
+        style={styles.tapeLabelImage}
+      />
+      <Text
+        numberOfLines={1}
+        style={[
+          styles.tapeLabelText,
+          fontReady && styles.tapeLabelTextFont,
+          { fontSize: 46 * scale },
+        ]}
+      >
+        {title}
+      </Text>
+    </View>
+  );
+}
+
 export default function CassetteScreen() {
-  const [zenAntiqueSoftLoaded] = useFonts({
+  const [fontsLoaded] = useFonts({
     ZenAntiqueSoft_400Regular,
+    Crayon: require("../assets/fonts/crayon.ttf"),
   });
   const router = useRouter();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -1173,7 +1210,7 @@ export default function CassetteScreen() {
             <Text
               style={[
                 styles.reviewHeading,
-                zenAntiqueSoftLoaded && styles.arrivalIntroTitleZen,
+                fontsLoaded && styles.tapeLabelTextFont,
               ]}
             >
               この声でよいですか
@@ -1207,26 +1244,12 @@ export default function CassetteScreen() {
               { opacity: savedNoticeOpacity },
             ]}
           >
-            <BlurView
-              intensity={34}
-              tint="light"
-              style={styles.arrivalIntroBlur}
+            <TapeLabel
+              title={notice.title}
+              scale={uiScale}
+              fontReady={fontsLoaded}
             />
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.arrivalIntroTitle,
-                zenAntiqueSoftLoaded && styles.arrivalIntroTitleZen,
-              ]}
-            >
-              {notice.title}
-            </Text>
-            <Text
-              style={[
-                styles.savedNoticeCaption,
-                zenAntiqueSoftLoaded && styles.savedNoticeCaptionZen,
-              ]}
-            >
+            <Text style={[styles.savedNoticeCaption, { fontSize: 20 * uiScale }]}>
               {notice.caption}
             </Text>
           </Animated.View>
@@ -1250,19 +1273,14 @@ export default function CassetteScreen() {
               },
             ]}
           >
-            <BlurView intensity={34} tint="light" style={styles.arrivalIntroBlur} />
-            <Text style={styles.arrivalIntroDate}>
+            <Text style={[styles.arrivalIntroDate, { fontSize: 20 * uiScale }]}>
               -{formatRecordedDate(activeCapsuleRecordedAtMs || Date.now())}-
             </Text>
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.arrivalIntroTitle,
-                zenAntiqueSoftLoaded && styles.arrivalIntroTitleZen,
-              ]}
-            >
-              {activeCapsuleTitle || "プロジェクト名"}
-            </Text>
+            <TapeLabel
+              title={activeCapsuleTitle || "プロジェクト名"}
+              scale={uiScale}
+              fontReady={fontsLoaded}
+            />
           </Animated.View>
         ) : null}
         </SafeAreaView>
@@ -1348,6 +1366,27 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  tapeLabel: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tapeLabelImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  tapeLabelText: {
+    // テープの傾きに合わせて、書いた文字も少し傾ける
+    transform: [{ rotate: "-2.2deg" }],
+    color: "#3a3128",
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    paddingHorizontal: 28,
+  },
+  tapeLabelTextFont: {
+    fontFamily: "Crayon",
+    fontWeight: "400",
+  },
   arrivalIntroBlur: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(252, 249, 249, 0.89)",
@@ -1358,12 +1397,6 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     fontWeight: "500",
     letterSpacing: 0.4,
-  },
-  arrivalIntroTitle: {
-    color: "#111217",
-    fontSize: 50,
-    fontWeight: "700",
-    letterSpacing: 0.2,
   },
   reviewOverlay: {
     position: "absolute",
@@ -1410,13 +1443,5 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "500",
     letterSpacing: 0.4,
-  },
-  savedNoticeCaptionZen: {
-    fontFamily: "ZenAntiqueSoft_400Regular",
-    fontWeight: "400",
-  },
-  arrivalIntroTitleZen: {
-    fontFamily: "ZenAntiqueSoft_400Regular",
-    fontWeight: "400",
   },
 });
