@@ -59,6 +59,11 @@ const ARRIVAL_INTRO_SLIDE_DISTANCE_RATIO = 0.36;
 // カプセルが未確定の状態でも登場演出を出すか。デモでは常に見せたいので DEMO_MODE に従う。
 const FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD = DEMO_MODE;
 const PROJECT_SWIPE_THRESHOLD = 28;
+// カセットに貼る名札。実物のラベルのように、リールの間に収まる大きさにする。
+// 画像の縦横比（267:75）に合わせてあるので、変えるときは両方そろえること。
+const TAPE_LABEL_WIDTH = 252;
+const TAPE_LABEL_HEIGHT = 71;
+const TAPE_LABEL_FONT_SIZE = 28;
 const PROJECT_SLIDE_OUT_MS = 170;
 const PROJECT_SLIDE_SWAP_MS = 40;
 const ARRIVAL_SOUND_FILE = require("../assets/soun/決定ボタンを押す40.mp3");
@@ -108,7 +113,7 @@ function TapeLabel({
     <View
       style={[
         styles.tapeLabel,
-        { width: 520 * scale, height: 146 * scale },
+        { width: TAPE_LABEL_WIDTH * scale, height: TAPE_LABEL_HEIGHT * scale },
       ]}
     >
       <Image
@@ -118,10 +123,13 @@ function TapeLabel({
       />
       <Text
         numberOfLines={1}
+        // 長い名前でもテープから溢れないよう、収まるまで縮める
+        adjustsFontSizeToFit
+        minimumFontScale={0.55}
         style={[
           styles.tapeLabelText,
           fontReady && styles.tapeLabelTextFont,
-          { fontSize: 46 * scale },
+          { fontSize: TAPE_LABEL_FONT_SIZE * scale },
         ]}
       >
         {title}
@@ -1249,7 +1257,7 @@ export default function CassetteScreen() {
               scale={uiScale}
               fontReady={fontsLoaded}
             />
-            <Text style={[styles.savedNoticeCaption, { fontSize: 20 * uiScale }]}>
+            <Text style={[styles.savedNoticeCaption, { fontSize: 13 * uiScale }]}>
               {notice.caption}
             </Text>
           </Animated.View>
@@ -1273,7 +1281,7 @@ export default function CassetteScreen() {
               },
             ]}
           >
-            <Text style={[styles.arrivalIntroDate, { fontSize: 20 * uiScale }]}>
+            <Text style={[styles.arrivalIntroDate, { fontSize: 13 * uiScale }]}>
               -{formatRecordedDate(activeCapsuleRecordedAtMs || Date.now())}-
             </Text>
             <TapeLabel
@@ -1378,10 +1386,10 @@ const styles = StyleSheet.create({
   tapeLabelText: {
     // テープの傾きに合わせて、書いた文字も少し傾ける
     transform: [{ rotate: "-2.2deg" }],
-    color: "#3a3128",
-    fontWeight: "700",
-    letterSpacing: 0.5,
-    paddingHorizontal: 28,
+    color: "#2b2521",
+    fontWeight: "400",
+    letterSpacing: 2,
+    paddingHorizontal: 16,
   },
   tapeLabelTextFont: {
     fontFamily: "Crayon",
