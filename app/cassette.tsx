@@ -53,16 +53,37 @@ const COVER_WIDTH = 729;
 const COVER_HEIGHT = 290;
 const PROJECT_SWIPE_THRESHOLD = 28;
 // カセットに貼る名札。実物のラベルのように、リールの間に収まる大きさにする。
-// 画像の縦横比（267:75）に合わせてあるので、変えるときは両方そろえること。
-// 画像そのままの縦横比（267:75）。崩すとテープが伸びて見える。
-const TAPE_LABEL_WIDTH = 268;
-const TAPE_LABEL_HEIGHT = 75;
-const TAPE_LABEL_FONT_SIZE = 34;
-// テープ画像に元から入っている傾き。文字もこれに合わせないと浮いて見える。
-const TAPE_LABEL_TILT_DEG = 3;
+// 幅と高さは自由に変えてよい。文字の傾きと縦位置は下で自動的に追従する。
+const TAPE_LABEL_WIDTH = 300;
+const TAPE_LABEL_HEIGHT = 90;
+const TAPE_LABEL_FONT_SIZE = 25;
 // カセット上での貼り位置（デザイン座標 852x393 のなかでの左上）
-const TAPE_LABEL_LEFT = 290;
+const TAPE_LABEL_LEFT = 215;
 const TAPE_LABEL_TOP = 140;
+
+// --- ここから下は maskingTape.png の実測値。画像を差し替えない限り触らない ---
+const TAPE_IMAGE_WIDTH = 267;
+const TAPE_IMAGE_HEIGHT = 75;
+// 画像に焼き込まれている傾き（帯の中心線を最小二乗で当てた値）。
+const TAPE_IMAGE_TILT_DEG = 5.06;
+// 帯の中心は画像の中心より上にある。透明な余白が下側に多いため。
+// 文字を枠の中央に置くと、この分だけテープより下に浮く。
+const TAPE_IMAGE_CENTER_OFFSET_Y = -4.19;
+
+// resizeMode="stretch" は縦横を別々に伸ばすので、伸び方が違うと
+// 焼き込まれた傾きも変わる。縦に強く伸ばせば急に、横に伸ばせば緩くなる。
+// 実際に描かれている傾きを、指定した幅と高さから逆算する。
+const TAPE_STRETCH_X = TAPE_LABEL_WIDTH / TAPE_IMAGE_WIDTH;
+const TAPE_STRETCH_Y = TAPE_LABEL_HEIGHT / TAPE_IMAGE_HEIGHT;
+const TAPE_LABEL_TILT_DEG =
+  (Math.atan(
+    Math.tan((TAPE_IMAGE_TILT_DEG * Math.PI) / 180) *
+      (TAPE_STRETCH_Y / TAPE_STRETCH_X),
+  ) *
+    180) /
+  Math.PI;
+// 帯の中心へ文字を寄せる量。高さを変えれば同じ割合でずれるので連動させる。
+const TAPE_LABEL_TEXT_OFFSET_Y = TAPE_IMAGE_CENTER_OFFSET_Y * TAPE_STRETCH_Y;
 const PROJECT_SLIDE_OUT_MS = 170;
 const PROJECT_SLIDE_SWAP_MS = 40;
 const ARRIVAL_SOUND_FILE = require("../assets/soun/決定ボタンを押す40.mp3");
@@ -122,7 +143,11 @@ function TapeLabel({
         style={[
           styles.tapeLabelText,
           fontReady && styles.tapeLabelTextFont,
-          { fontSize: TAPE_LABEL_FONT_SIZE * scale },
+          {
+            fontSize: TAPE_LABEL_FONT_SIZE * scale,
+            // 枠の中央ではなく、帯の中央に乗せる
+            marginTop: TAPE_LABEL_TEXT_OFFSET_Y * scale,
+          },
         ]}
       >
         {title}
@@ -1329,7 +1354,7 @@ const styles = StyleSheet.create({
   tapeLabelText: {
     // テープ画像は右下がりに傾いているので、文字も同じ向きに倒す。
     // 逆向きだと、貼った紙の上に書いたようには見えない。
-    transform: [{ rotate: `${TAPE_LABEL_TILT_DEG}deg` }],
+    transform: [{ rotate: `${TAPE_LABEL_TILT_DEG.toFixed(2)}deg` }],
     color: "#2b2521",
     fontWeight: "400",
     letterSpacing: 4,
