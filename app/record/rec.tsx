@@ -647,22 +647,13 @@ export default function RecordDoneScreen() {
       return;
     }
 
-    const shouldOpenCassetteFirst = await hardwareWS.waitUntilConnected(600);
-    if (shouldOpenCassetteFirst) {
-      await resetForNextRecording();
-      router.navigate({
-        pathname: "/cassette",
-        params: { capsuleId: savedCapsuleId, showArrivalIntro: "1" },
-      });
-      return;
-    }
-
+    // ハードが繋がっていると、以前はここでカセット画面へ飛ばしていた。
+    // だが画面で操作しているのはモバイルモードを選んだからで、
+    // 勝手にカセットモードへ移ると、付けたテープ名を確認できないまま
+    // 保存の演出ごと飛ばされてしまう。
+    // カセットモードには自前の保管フローがあるので、ここでは移らない。
     setIsSaveComplete(true);
-  }, [
-    persistCurrentRecording,
-    resetForNextRecording,
-    router,
-  ]);
+  }, [persistCurrentRecording]);
 
   const saveProjectAndBack = useCallback(async () => {
     await resetForNextRecording();
