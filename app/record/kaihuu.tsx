@@ -11,7 +11,6 @@ import {
   type AudioStatus,
 } from "expo-audio";
 import { ZenAntiqueSoft_400Regular } from "@expo-google-fonts/zen-antique-soft";
-import { BlurView } from "expo-blur";
 import { useFonts } from "expo-font";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -19,7 +18,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
   Animated,
-  Easing,
   Image,
   ImageBackground,
   Pressable,
@@ -40,9 +38,6 @@ const NOREC_BUTTON_NUDGE_Y = -20;
 const REC_BUTTON_ALIGN_OFFSET_Y = -5;
 const RECORDED_DATE_STORAGE_KEY = "recordedDateKey";
 const TAB_SWIPE_THRESHOLD = 28;
-const ARRIVAL_INTRO_SLIDE_MS = 420;
-const ARRIVAL_INTRO_HOLD_MS = 900;
-const ARRIVAL_INTRO_FADE_OUT_MS = 420;
 
 function toDateKey(date: Date): string {
   const y = date.getFullYear();
@@ -57,12 +52,6 @@ function formatDisplayDate(date: Date): string {
   const d = date.getDate();
   const w = WEEKDAY[date.getDay()];
   return `${y}/${m}/${d} ${w}`;
-}
-
-function formatRecordedDate(ms: number | null): string {
-  if (typeof ms !== "number" || !Number.isFinite(ms)) return "";
-  const d = new Date(ms);
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${WEEKDAY[d.getDay()]}`;
 }
 
 function formatMillis(millis: number): string {
@@ -81,11 +70,10 @@ export default function KaihuuScreen() {
   }>();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isLandscapeViewport = windowWidth > windowHeight;
-  const [fontsLoaded] = useFonts({
+  useFonts({
     YDWbananaslipplus: require("../../assets/fonts/YDWbananaslipplus.otf"),
     ZenAntiqueSoft_400Regular,
   });
-  const zenAntiqueSoftLoaded = fontsLoaded;
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"rec" | "archive">("archive");
   const [toolbarTab, setToolbarTab] = useState<"rec" | "archive">("archive");
@@ -105,15 +93,7 @@ export default function KaihuuScreen() {
   const [isSelectedCapsuleLocked, setIsSelectedCapsuleLocked] = useState(false);
   const [slideWidth, setSlideWidth] = useState(INITIAL_SLIDE_WIDTH);
   const [recordedDateKey, setRecordedDateKey] = useState<string | null>(null);
-  const [activeCapsuleTitle, setActiveCapsuleTitle] = useState("");
-  const [activeCapsuleRecordedAtMs, setActiveCapsuleRecordedAtMs] = useState<
-    number | null
-  >(null);
-  const [isArrivalIntroVisible, setIsArrivalIntroVisible] = useState(false);
   const slideX = useRef(new Animated.Value(-INITIAL_SLIDE_WIDTH)).current;
-  const arrivalIntroTranslateX = useRef(new Animated.Value(0)).current;
-  const arrivalIntroOpacity = useRef(new Animated.Value(0)).current;
-  const arrivalIntroPlayedRef = useRef(false);
   const soundRef = useRef<AudioPlayer | null>(null);
   const playbackSubscriptionRef = useRef<{ remove: () => void } | null>(null);
   const capsuleId = useMemo(() => {
@@ -128,7 +108,6 @@ export default function KaihuuScreen() {
     }
     return "";
   }, [params.capsuleId, params.transcriptId]);
-  const shouldPlayArrivalIntro = true;
 
   const loadRecordedDateKey = useCallback(async () => {
     try {
@@ -209,8 +188,6 @@ export default function KaihuuScreen() {
     (async () => {
       if (!capsuleId) {
         setSelectedCapsuleAudioUri(null);
-        setActiveCapsuleTitle("");
-        setActiveCapsuleRecordedAtMs(null);
         setDurationMillis(MOCK_DURATION_MS);
         setPositionMillis(0);
         setSliderMillis(0);
@@ -222,8 +199,6 @@ export default function KaihuuScreen() {
       const locked = capsule ? Date.now() < capsule.unlockAtMs : false;
       setIsSelectedCapsuleLocked(locked);
       setSelectedCapsuleAudioUri(!locked ? (capsule?.audioUri ?? null) : null);
-      setActiveCapsuleTitle(capsule?.title ?? "");
-      setActiveCapsuleRecordedAtMs(capsule?.recordedAtMs ?? null);
       setPositionMillis(0);
       setSliderMillis(0);
       setDurationMillis(
@@ -405,57 +380,6 @@ export default function KaihuuScreen() {
       unloadSound().catch(() => {});
     };
   }, [unloadSound]);
-
-  useEffect(() => {
-    if (!shouldPlayArrivalIntro) return;
-    if (arrivalIntroPlayedRef.current) return;
-
-    arrivalIntroPlayedRef.current = true;
-    setIsArrivalIntroVisible(true);
-    arrivalIntroTranslateX.stopAnimation();
-    arrivalIntroOpacity.stopAnimation();
-    arrivalIntroTranslateX.setValue(0);
-    arrivalIntroOpacity.setValue(0);
-
-    Animated.sequence([
-      Animated.parallel([
-        Animated.timing(arrivalIntroTranslateX, {
-          toValue: 0,
-          duration: 0,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(arrivalIntroOpacity, {
-          toValue: 1,
-          duration: ARRIVAL_INTRO_SLIDE_MS,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.delay(ARRIVAL_INTRO_HOLD_MS),
-      Animated.parallel([
-        Animated.timing(arrivalIntroTranslateX, {
-          toValue: 0,
-          duration: ARRIVAL_INTRO_FADE_OUT_MS,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(arrivalIntroOpacity, {
-          toValue: 0,
-          duration: ARRIVAL_INTRO_FADE_OUT_MS,
-          easing: Easing.in(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-    ]).start(() => {
-      setIsArrivalIntroVisible(false);
-    });
-  }, [
-    activeCapsuleTitle,
-    arrivalIntroOpacity,
-    arrivalIntroTranslateX,
-    shouldPlayArrivalIntro,
-  ]);
 
   if (isLandscapeViewport) {
     return (
@@ -710,36 +634,6 @@ export default function KaihuuScreen() {
           </View>
         </SafeAreaView>
       </GestureDetector>
-      {isArrivalIntroVisible ? (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.arrivalIntroOverlay,
-            {
-              opacity: arrivalIntroOpacity,
-              transform: [{ translateX: arrivalIntroTranslateX }],
-            },
-          ]}
-        >
-          <BlurView
-            intensity={34}
-            tint="light"
-            style={styles.arrivalIntroBlur}
-          />
-          <Text style={styles.arrivalIntroDate}>
-            -{formatRecordedDate(activeCapsuleRecordedAtMs || Date.now())}-
-          </Text>
-          <Text
-            numberOfLines={1}
-            style={[
-              styles.arrivalIntroTitle,
-              zenAntiqueSoftLoaded && styles.arrivalIntroTitleZen,
-            ]}
-          >
-            {activeCapsuleTitle || "あなたのカプセル"}
-          </Text>
-        </Animated.View>
-      ) : null}
     </ImageBackground>
   );
 }
@@ -867,36 +761,5 @@ const styles = StyleSheet.create({
     marginBottom: 84,
   },
 
-  arrivalIntroOverlay: {
-    position: "absolute",
-    left: -36,
-    right: -36,
-    top: -72,
-    bottom: -72,
-    zIndex: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  arrivalIntroBlur: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(252, 249, 249, 0.89)",
-  },
-  arrivalIntroDate: {
-    color: "#6f7178",
-    fontSize: 17,
-    marginBottom: 18,
-    fontWeight: "500",
-    letterSpacing: 0.4,
-  },
-  arrivalIntroTitle: {
-    color: "#111217",
-    fontSize: 40,
-    fontWeight: "700",
-    letterSpacing: 0.2,
-  },
-  arrivalIntroTitleZen: {
-    fontFamily: "ZenAntiqueSoft_400Regular",
-    fontWeight: "400",
-  },
 });
 

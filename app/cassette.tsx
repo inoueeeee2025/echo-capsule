@@ -51,7 +51,6 @@ const COVER_LEFT = 16;
 const COVER_TOP = 28;
 const COVER_WIDTH = 729;
 const COVER_HEIGHT = 290;
-const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const ARRIVAL_INTRO_SLIDE_MS = 420;
 const ARRIVAL_INTRO_HOLD_MS = 900;
 const ARRIVAL_INTRO_FADE_OUT_MS = 420;
@@ -81,12 +80,6 @@ type PlayableCapsule = {
   title: string;
   recordedAtMs: number | null;
 };
-
-function formatRecordedDate(ms: number | null): string {
-  if (typeof ms !== "number" || !Number.isFinite(ms)) return "";
-  const d = new Date(ms);
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${WEEKDAY[d.getDay()]}`;
-}
 
 function formatDuration(totalSec: number): string {
   const safe = Math.max(0, Math.floor(totalSec));
@@ -139,8 +132,9 @@ function TapeLabel({
 }
 
 export default function CassetteScreen() {
-  const [fontsLoaded] = useFonts({
-    ZenAntiqueSoft_400Regular,
+  const [zenLoaded] = useFonts({ ZenAntiqueSoft_400Regular });
+  // 名札の手書き文字だけに使う
+  const [crayonLoaded] = useFonts({
     Crayon: require("../assets/fonts/crayon.ttf"),
   });
   const router = useRouter();
@@ -176,7 +170,6 @@ export default function CassetteScreen() {
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [activeCapsuleId, setActiveCapsuleId] = useState<string>("");
   const [activeCapsuleTitle, setActiveCapsuleTitle] = useState("");
-  const [activeCapsuleRecordedAtMs, setActiveCapsuleRecordedAtMs] = useState<number | null>(null);
   const [isArrivalIntroVisible, setIsArrivalIntroVisible] = useState(false);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const rotateProgress = useRef(new Animated.Value(0)).current;
@@ -296,7 +289,6 @@ export default function CassetteScreen() {
       setAudioUri(null);
       setActiveCapsuleId("");
       setActiveCapsuleTitle("");
-      setActiveCapsuleRecordedAtMs(null);
       return;
     }
 
@@ -339,7 +331,6 @@ export default function CassetteScreen() {
     setAudioUri(target.audioUri);
     setActiveCapsuleId(target.id);
     setActiveCapsuleTitle(target.title);
-    setActiveCapsuleRecordedAtMs(target.recordedAtMs);
   }, [activeCapsuleIndex, playableCapsules]);
 
   const clearMaxRecordingTimeout = useCallback(() => {
@@ -1218,7 +1209,7 @@ export default function CassetteScreen() {
             <Text
               style={[
                 styles.reviewHeading,
-                fontsLoaded && styles.tapeLabelTextFont,
+                zenLoaded && styles.arrivalIntroTitleZen,
               ]}
             >
               この声でよいですか
@@ -1252,12 +1243,26 @@ export default function CassetteScreen() {
               { opacity: savedNoticeOpacity },
             ]}
           >
-            <TapeLabel
-              title={notice.title}
-              scale={uiScale}
-              fontReady={fontsLoaded}
+            <BlurView
+              intensity={34}
+              tint="light"
+              style={styles.arrivalIntroBlur}
             />
-            <Text style={[styles.savedNoticeCaption, { fontSize: 13 * uiScale }]}>
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.arrivalIntroTitle,
+                zenLoaded && styles.arrivalIntroTitleZen,
+              ]}
+            >
+              {notice.title}
+            </Text>
+            <Text
+              style={[
+                styles.savedNoticeCaption,
+                zenLoaded && styles.arrivalIntroTitleZen,
+              ]}
+            >
               {notice.caption}
             </Text>
           </Animated.View>
@@ -1281,13 +1286,10 @@ export default function CassetteScreen() {
               },
             ]}
           >
-            <Text style={[styles.arrivalIntroDate, { fontSize: 13 * uiScale }]}>
-              -{formatRecordedDate(activeCapsuleRecordedAtMs || Date.now())}-
-            </Text>
             <TapeLabel
               title={activeCapsuleTitle || "プロジェクト名"}
               scale={uiScale}
-              fontReady={fontsLoaded}
+              fontReady={crayonLoaded}
             />
           </Animated.View>
         ) : null}
@@ -1395,16 +1397,19 @@ const styles = StyleSheet.create({
     fontFamily: "Crayon",
     fontWeight: "400",
   },
+  arrivalIntroTitle: {
+    color: "#111217",
+    fontSize: 50,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+  arrivalIntroTitleZen: {
+    fontFamily: "ZenAntiqueSoft_400Regular",
+    fontWeight: "400",
+  },
   arrivalIntroBlur: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(252, 249, 249, 0.89)",
-  },
-  arrivalIntroDate: {
-    color: "#6f7178",
-    fontSize: 17,
-    marginBottom: 18,
-    fontWeight: "500",
-    letterSpacing: 0.4,
   },
   reviewOverlay: {
     position: "absolute",
