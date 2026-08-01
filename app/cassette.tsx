@@ -67,7 +67,7 @@ const TAPE_IMAGE_HEIGHT = 75;
 // 画像に焼き込まれている傾き（帯の中心線を最小二乗で当てた値）。
 const TAPE_IMAGE_TILT_DEG = 5.06;
 // 帯の中心は画像の中心より上にある。透明な余白が下側に多いため。
-// 文字を枠の中央に置くと、この分だけテープより下に浮く。
+// 文字を枠の中央に置くと、この分だけテープより下に浮く
 const TAPE_IMAGE_CENTER_OFFSET_Y = -4.19;
 
 // resizeMode="stretch" は縦横を別々に伸ばすので、伸び方が違うと
@@ -135,23 +135,36 @@ function TapeLabel({
         resizeMode="stretch"
         style={styles.tapeLabelImage}
       />
-      <Text
-        numberOfLines={1}
-        // 長い名前でもテープから溢れないよう、収まるまで縮める
-        adjustsFontSizeToFit
-        minimumFontScale={0.55}
+      {/*
+        傾きは Text ではなく View に掛ける。
+        Text に transform を書いても実機では無視され、文字だけ水平のまま残る。
+      */}
+      <View
         style={[
-          styles.tapeLabelText,
-          fontReady && styles.tapeLabelTextFont,
+          styles.tapeLabelRotator,
           {
-            fontSize: TAPE_LABEL_FONT_SIZE * scale,
-            // 枠の中央ではなく、帯の中央に乗せる
-            marginTop: TAPE_LABEL_TEXT_OFFSET_Y * scale,
+            transform: [
+              // 枠の中央ではなく、帯の中央に乗せる
+              { translateY: TAPE_LABEL_TEXT_OFFSET_Y * scale },
+              { rotate: `${TAPE_LABEL_TILT_DEG.toFixed(2)}deg` },
+            ],
           },
         ]}
       >
-        {title}
-      </Text>
+        <Text
+          numberOfLines={1}
+          // 長い名前でもテープから溢れないよう、収まるまで縮める
+          adjustsFontSizeToFit
+          minimumFontScale={0.55}
+          style={[
+            styles.tapeLabelText,
+            fontReady && styles.tapeLabelTextFont,
+            { fontSize: TAPE_LABEL_FONT_SIZE * scale },
+          ]}
+        >
+          {title}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -1351,10 +1364,14 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
+  // テープ画像は右下がりに傾いているので、文字も同じ向きに倒す。
+  // 逆向きだと、貼った紙の上に書いたようには見えない。
+  tapeLabelRotator: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   tapeLabelText: {
-    // テープ画像は右下がりに傾いているので、文字も同じ向きに倒す。
-    // 逆向きだと、貼った紙の上に書いたようには見えない。
-    transform: [{ rotate: `${TAPE_LABEL_TILT_DEG.toFixed(2)}deg` }],
     color: "#2b2521",
     fontWeight: "400",
     letterSpacing: 4,
