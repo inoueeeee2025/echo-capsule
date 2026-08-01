@@ -148,7 +148,7 @@ export default function ArchiveContent({
       }
       const shouldOpenCassetteFirst = await hardwareWS.waitUntilConnected();
       if (shouldOpenCassetteFirst) {
-        router.push({
+        router.navigate({
           pathname: "/cassette",
           params: { capsuleId: item.id },
         });

@@ -172,9 +172,13 @@ export default function CassetteScreen() {
   > | null>(null);
   const requestedCapsuleId =
     typeof params.capsuleId === "string" ? params.capsuleId : "";
+  // 録音のために飛んできたかどうか。
+  // 同じ画面に戻る場合も録音を始められるよう、呼ぶ側は毎回違う値を渡してくる。
+  const autoRecordToken =
+    typeof params.autoRecord === "string" ? params.autoRecord : "";
   // 録音のために飛んできた場合、まだ録っていないテープの名前を先に見せても
   // 意味がないので登場演出は出さない。既存カプセルを開いたときだけ出す。
-  const shouldPlayArrivalIntro = params.autoRecord !== "1";
+  const shouldPlayArrivalIntro = autoRecordToken.length === 0;
 
   const uiScale = useMemo(() => {
     const byWidth = windowWidth / DESIGN_WIDTH;
@@ -303,6 +307,7 @@ export default function CassetteScreen() {
    * REC の準備が終わる前にボタンが離された場合に使う。
    */
   const abortCassetteRecording = useCallback(async () => {
+    console.log("[CAS] 録音を畳む（短すぎる・押し損ね）");
     clearMaxRecordingTimeout();
     const recording = recordingRef.current;
     recordingRef.current = null;
@@ -325,7 +330,14 @@ export default function CassetteScreen() {
     clearMaxRecordingTimeout();
     const recording = recordingRef.current;
     recordingRef.current = null;
-    if (!recording) return null;
+    if (!recording) {
+      // ここを通ると録音中フラグが降りないまま残る。
+      // 次の録音が門前払いされる原因になりうるので、必ず降ろしておく。
+      console.log("[CAS] 停止しようとしたが、録音が動いていなかった");
+      isHardwareRecordingRef.current = false;
+      setIsCassetteRecording(false);
+      return null;
+    }
 
     try {
       await recording.stop();
@@ -354,7 +366,8 @@ export default function CassetteScreen() {
       console.log(`[CAS] recorded ${durationSec}s (${elapsedMs}ms) uri=${uri}`);
       setPendingRecording({ uri, recordedAtMs, durationSec });
       return uri;
-    } catch {
+    } catch (error) {
+      console.log("[CAS] 録音の停止に失敗", error);
       return null;
     } finally {
       isHardwareRecordingRef.current = false;
@@ -386,11 +399,20 @@ export default function CassetteScreen() {
   }, [pendingRecording, unloadSound]);
 
   const startCassetteRecording = useCallback(async () => {
-    if (isHardwareRecordingRef.current) return;
+    // 無言で抜けると「押しても何も起きない」に見えてしまうので、
+    // 抜けた理由を必ず残す。
+    if (isHardwareRecordingRef.current) {
+      console.log("[CAS] 録音を開始できない: 前の録音がまだ終わっていない扱い");
+      return;
+    }
 
     try {
       const { granted } = await requestRecordingPermissionsAsync();
-      if (!granted) return;
+      if (!granted) {
+        console.log("[CAS] 録音を開始できない: マイクの許可がない");
+        return;
+      }
+      console.log("[CAS] 録音を開始する");
 
       await unloadSound();
       shouldPlayFromHardwareRef.current = false;
@@ -421,7 +443,8 @@ export default function CassetteScreen() {
       if (!isRecPressedRef.current) {
         await abortCassetteRecording();
       }
-    } catch {
+    } catch (error) {
+      console.log("[CAS] 録音の開始に失敗", error);
       isHardwareRecordingRef.current = false;
       setIsCassetteRecording(false);
     }
@@ -557,6 +580,12 @@ export default function CassetteScreen() {
   useFocusEffect(
     useCallback(() => {
     hardwareWS.connect();
+
+    // 画面を離れているあいだのボタン操作は受け取れていない。
+    // 前回値が古いままだと、戻ってきて最初の1回が
+    // 「変化なし」と判断されて無視される。今の状態を起点にする。
+    prevHardwareStateRef.current = hardwareWS.getLastState();
+
     const unsub = hardwareWS.subscribe((s) => {
       const prev = prevHardwareStateRef.current;
       console.log(
@@ -643,16 +672,16 @@ export default function CassetteScreen() {
   // 録音画面で REC を押してこの画面に飛んできた場合、そのまま録音を始める。
   // 押しっぱなしのまま遷移してくるので、離したときに停止できるよう
   // 「REC は押されている」状態から始める。
-  const hasAppliedAutoRecordRef = useRef(false);
+  const appliedAutoRecordTokenRef = useRef("");
   useEffect(() => {
-    if (params.autoRecord !== "1") return;
-    if (hasAppliedAutoRecordRef.current) return;
-    hasAppliedAutoRecordRef.current = true;
+    if (!autoRecordToken) return;
+    if (appliedAutoRecordTokenRef.current === autoRecordToken) return;
+    appliedAutoRecordTokenRef.current = autoRecordToken;
 
     prevHardwareStateRef.current = { stop: false, play: false, rec: true };
     isRecPressedRef.current = true;
     void startCassetteRecording();
-  }, [params.autoRecord, startCassetteRecording]);
+  }, [autoRecordToken, startCassetteRecording]);
 
   useEffect(() => {
     void setIsAudioActiveAsync(true);

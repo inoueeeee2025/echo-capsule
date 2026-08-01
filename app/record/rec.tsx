@@ -648,7 +648,7 @@ export default function RecordDoneScreen() {
     const shouldOpenCassetteFirst = await hardwareWS.waitUntilConnected(600);
     if (shouldOpenCassetteFirst) {
       await resetForNextRecording();
-      router.push({
+      router.navigate({
         pathname: "/cassette",
         params: { capsuleId: savedCapsuleId, showArrivalIntro: "1" },
       });
@@ -676,6 +676,11 @@ export default function RecordDoneScreen() {
     useCallback(() => {
       hardwareWS.connect();
 
+      // 画面を離れているあいだのボタン操作は受け取れていない。
+      // 前回値が古いままだと、戻ってきて最初の1回が
+      // 「変化なし」と判断されて無視される。今の状態を起点にする。
+      prevHardwareStateRef.current = hardwareWS.getLastState();
+
       const unsub = hardwareWS.subscribe((s) => {
         const prev = prevHardwareStateRef.current;
         const recDown = s.rec && !prev.rec;
@@ -684,9 +689,12 @@ export default function RecordDoneScreen() {
         // ここで録音を始めてしまうと、カセットに入れる前の
         // モバイル表示のまま録れてしまい、体験としてつながらない。
         if (recDown && !isLockedToday) {
-          router.push({
+          // カセット画面は1枚だけ保つ。push だと押すたびに積み上がり、
+          // 展示で来場者が繰り返すと画面が何枚も溜まる。
+          // 同じ画面に戻る場合も録音を始められるよう、毎回違う値を渡す。
+          router.navigate({
             pathname: "/cassette",
-            params: { autoRecord: "1" },
+            params: { autoRecord: String(Date.now()) },
           });
         }
 
@@ -1258,7 +1266,7 @@ export default function RecordDoneScreen() {
     void refreshUnlockNotice();
     const shouldOpenCassetteFirst = await hardwareWS.waitUntilConnected();
     if (shouldOpenCassetteFirst) {
-      router.push({
+      router.navigate({
         pathname: "/cassette",
         params: { capsuleId, showArrivalIntro: "1" },
       });
@@ -1321,7 +1329,7 @@ export default function RecordDoneScreen() {
   }, []);
 
   const openCassetteMode = useCallback(() => {
-    router.push("/cassette");
+    router.navigate("/cassette");
   }, [router]);
 
   // ペアリング案内の出し入れ。
