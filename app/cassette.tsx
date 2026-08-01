@@ -133,7 +133,7 @@ function TapeLabel({
 export default function CassetteScreen() {
   const [fontsLoaded] = useFonts({
     ZenAntiqueSoft_400Regular,
-    Handwriting: require("../assets/fonts/handwriting.ttf"),
+    Crayon: require("../assets/fonts/crayon.ttf"),
   });
   const router = useRouter();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -1384,7 +1384,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
   },
   tapeLabelTextFont: {
-    fontFamily: "Handwriting",
+    fontFamily: "Crayon",
     fontWeight: "400",
   },
   arrivalIntroBlur: {
