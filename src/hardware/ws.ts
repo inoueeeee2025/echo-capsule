@@ -163,6 +163,16 @@ class EchoCapsuleWS {
     return this.connected;
   }
 
+  /**
+   * 最後に受け取ったボタンの状態。
+   *
+   * 画面が表示されたときの起点として使う。前回値を持たずに始めると、
+   * ボタンが押されたままの状態で戻ってきたときに押下を取りこぼす。
+   */
+  getLastState(): HardwareState {
+    return this.lastState;
+  }
+
   getUrl() {
     return getHardwareWsUrl();
   }

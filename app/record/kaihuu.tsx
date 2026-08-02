@@ -1,6 +1,6 @@
-﻿import ArchiveContent from "@/components/ArchiveContent";
+import ArchiveContent from "@/components/ArchiveContent";
 import RecordToolbar from "@/components/RecordToolbar";
-import { loadCapsules, saveCapsules } from "@/src/capsules/storage";
+import { loadCapsules } from "@/src/capsules/storage";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Slider from "@react-native-community/slider";
@@ -11,7 +11,6 @@ import {
   type AudioStatus,
 } from "expo-audio";
 import { ZenAntiqueSoft_400Regular } from "@expo-google-fonts/zen-antique-soft";
-import { BlurView } from "expo-blur";
 import { useFonts } from "expo-font";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -19,11 +18,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
   Animated,
-  Easing,
   Image,
   ImageBackground,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -40,11 +37,7 @@ const INITIAL_SLIDE_WIDTH = 360;
 const NOREC_BUTTON_NUDGE_Y = -20;
 const REC_BUTTON_ALIGN_OFFSET_Y = -5;
 const RECORDED_DATE_STORAGE_KEY = "recordedDateKey";
-const TEXT_BOARD_IMAGE = require("../../assets/images/textBoard.png");
 const TAB_SWIPE_THRESHOLD = 28;
-const ARRIVAL_INTRO_SLIDE_MS = 420;
-const ARRIVAL_INTRO_HOLD_MS = 900;
-const ARRIVAL_INTRO_FADE_OUT_MS = 420;
 
 function toDateKey(date: Date): string {
   const y = date.getFullYear();
@@ -61,12 +54,6 @@ function formatDisplayDate(date: Date): string {
   return `${y}/${m}/${d} ${w}`;
 }
 
-function formatRecordedDate(ms: number | null): string {
-  if (typeof ms !== "number" || !Number.isFinite(ms)) return "";
-  const d = new Date(ms);
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${WEEKDAY[d.getDay()]}`;
-}
-
 function formatMillis(millis: number): string {
   const safe = Number.isFinite(millis) && millis > 0 ? millis : 0;
   const totalSeconds = Math.floor(safe / 1000);
@@ -77,23 +64,19 @@ function formatMillis(millis: number): string {
 
 export default function KaihuuScreen() {
   const params = useLocalSearchParams<{
-    mode?: string;
     capsuleId?: string;
     transcriptId?: string;
     fromUnlockNotice?: string;
   }>();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isLandscapeViewport = windowWidth > windowHeight;
-  const [fontsLoaded] = useFonts({
+  useFonts({
     YDWbananaslipplus: require("../../assets/fonts/YDWbananaslipplus.otf"),
     ZenAntiqueSoft_400Regular,
   });
-  const ydwLoaded = fontsLoaded;
-  const zenAntiqueSoftLoaded = fontsLoaded;
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"rec" | "archive">("archive");
   const [toolbarTab, setToolbarTab] = useState<"rec" | "archive">("archive");
-  const [isTextMode, setIsTextMode] = useState(false);
   const [showMainArchive, setShowMainArchive] = useState(false);
   const [archiveSettledToMain, setArchiveSettledToMain] = useState(false);
   const [hasUnopenedInArchive, setHasUnopenedInArchive] = useState(false);
@@ -110,17 +93,7 @@ export default function KaihuuScreen() {
   const [isSelectedCapsuleLocked, setIsSelectedCapsuleLocked] = useState(false);
   const [slideWidth, setSlideWidth] = useState(INITIAL_SLIDE_WIDTH);
   const [recordedDateKey, setRecordedDateKey] = useState<string | null>(null);
-  const [line1Width, setLine1Width] = useState(0);
-  const [line2Width, setLine2Width] = useState(0);
-  const [activeCapsuleTitle, setActiveCapsuleTitle] = useState("");
-  const [activeCapsuleRecordedAtMs, setActiveCapsuleRecordedAtMs] = useState<
-    number | null
-  >(null);
-  const [isArrivalIntroVisible, setIsArrivalIntroVisible] = useState(false);
   const slideX = useRef(new Animated.Value(-INITIAL_SLIDE_WIDTH)).current;
-  const arrivalIntroTranslateX = useRef(new Animated.Value(0)).current;
-  const arrivalIntroOpacity = useRef(new Animated.Value(0)).current;
-  const arrivalIntroPlayedRef = useRef(false);
   const soundRef = useRef<AudioPlayer | null>(null);
   const playbackSubscriptionRef = useRef<{ remove: () => void } | null>(null);
   const capsuleId = useMemo(() => {
@@ -135,7 +108,6 @@ export default function KaihuuScreen() {
     }
     return "";
   }, [params.capsuleId, params.transcriptId]);
-  const shouldPlayArrivalIntro = true;
 
   const loadRecordedDateKey = useCallback(async () => {
     try {
@@ -150,22 +122,6 @@ export default function KaihuuScreen() {
     setHasUnopenedInArchive(
       list.some((item) => item.openedAtMs === null && nowMs >= item.unlockAtMs),
     );
-  }, []);
-
-  const openAllDay21Capsules = useCallback(async () => {
-    const list = await loadCapsules();
-    let changed = false;
-    const nowMs = Date.now();
-    const next = list.map((item) => {
-      const unlockDate = new Date(item.unlockAtMs);
-      const isDay21 = unlockDate.getDate() === 21;
-      if (!isDay21 || item.openedAtMs !== null) return item;
-      changed = true;
-      return { ...item, openedAtMs: nowMs };
-    });
-    if (changed) {
-      await saveCapsules(next);
-    }
   }, []);
 
   useEffect(() => {
@@ -185,11 +141,8 @@ export default function KaihuuScreen() {
   );
 
   useEffect(() => {
-    (async () => {
-      await openAllDay21Capsules();
-      await refreshUnopenedBadge();
-    })();
-  }, [openAllDay21Capsules, refreshUnopenedBadge]);
+    void refreshUnopenedBadge();
+  }, [refreshUnopenedBadge]);
 
   const unloadSound = useCallback(async () => {
     playbackSubscriptionRef.current?.remove();
@@ -235,8 +188,6 @@ export default function KaihuuScreen() {
     (async () => {
       if (!capsuleId) {
         setSelectedCapsuleAudioUri(null);
-        setActiveCapsuleTitle("");
-        setActiveCapsuleRecordedAtMs(null);
         setDurationMillis(MOCK_DURATION_MS);
         setPositionMillis(0);
         setSliderMillis(0);
@@ -248,8 +199,6 @@ export default function KaihuuScreen() {
       const locked = capsule ? Date.now() < capsule.unlockAtMs : false;
       setIsSelectedCapsuleLocked(locked);
       setSelectedCapsuleAudioUri(!locked ? (capsule?.audioUri ?? null) : null);
-      setActiveCapsuleTitle(capsule?.title ?? "");
-      setActiveCapsuleRecordedAtMs(capsule?.recordedAtMs ?? null);
       setPositionMillis(0);
       setSliderMillis(0);
       setDurationMillis(
@@ -365,19 +314,23 @@ export default function KaihuuScreen() {
   ]);
 
   const todayKey = toDateKey(new Date());
-  const isLockedToday = recordedDateKey === todayKey;
-  const recGuideText = isLockedToday
-    ? "本日の録音は完了しました。\n1年後のあなたへ届けられます。"
-    : "録音ボタンを押して録音しましょう";
+  // 1日1回の録音制限は現在無効。rec 画面側（rec.tsx）でも無効にしてあり、
+  // 有効/無効が画面ごとにずれると仕様が矛盾するのでここで揃えている。
+  // 制限を復活させるときは両方を戻すこと。
+  const isLockedToday = false;
+  const recGuideText = "録音ボタンを押して録音しましょう";
 
-  const transcriptLine1 = "こんにちはー";
-  const transcriptLine2 = "おはようございますー";
-  const ydwStyle = ydwLoaded ? styles.ydwBananaslipPlus : undefined;
 
+  /**
+   * 録音へ。
+   *
+   * この画面にも録音タブの見た目があるが、中身は複製で録音できない。
+   * 録音を持っているのは rec 画面だけなので、そちらへ渡す。
+   * navigate なので、既にある rec 画面に戻るだけで積み上がらない。
+   */
   const switchToRecTab = useCallback(() => {
-    setToolbarTab("rec");
-    setActiveTab("rec");
-  }, []);
+    router.navigate("/record/rec");
+  }, [router]);
 
   const switchToArchiveTab = useCallback(
     (wasArchiveTab: boolean) => {
@@ -428,77 +381,11 @@ export default function KaihuuScreen() {
   }, [recordedDateKey, todayKey]);
 
   useEffect(() => {
-    if (params.mode !== "text") return;
-    setToolbarTab("archive");
-    setActiveTab("archive");
-    setShowMainArchive(false);
-    setArchiveSettledToMain(false);
-    setIsTextMode(true);
-  }, [params.mode]);
-
-  useEffect(() => {
-    const resolved = Image.resolveAssetSource(TEXT_BOARD_IMAGE);
-    if (!resolved?.uri) return;
-    Image.prefetch(resolved.uri).catch(() => {});
-  }, []);
-
-  useEffect(() => {
     setIsAudioActiveAsync(true).catch(() => {});
     return () => {
       unloadSound().catch(() => {});
     };
   }, [unloadSound]);
-
-  useEffect(() => {
-    if (!shouldPlayArrivalIntro) return;
-    if (arrivalIntroPlayedRef.current) return;
-
-    arrivalIntroPlayedRef.current = true;
-    setIsArrivalIntroVisible(true);
-    arrivalIntroTranslateX.stopAnimation();
-    arrivalIntroOpacity.stopAnimation();
-    arrivalIntroTranslateX.setValue(0);
-    arrivalIntroOpacity.setValue(0);
-
-    Animated.sequence([
-      Animated.parallel([
-        Animated.timing(arrivalIntroTranslateX, {
-          toValue: 0,
-          duration: 0,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(arrivalIntroOpacity, {
-          toValue: 1,
-          duration: ARRIVAL_INTRO_SLIDE_MS,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.delay(ARRIVAL_INTRO_HOLD_MS),
-      Animated.parallel([
-        Animated.timing(arrivalIntroTranslateX, {
-          toValue: 0,
-          duration: ARRIVAL_INTRO_FADE_OUT_MS,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(arrivalIntroOpacity, {
-          toValue: 0,
-          duration: ARRIVAL_INTRO_FADE_OUT_MS,
-          easing: Easing.in(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-    ]).start(() => {
-      setIsArrivalIntroVisible(false);
-    });
-  }, [
-    activeCapsuleTitle,
-    arrivalIntroOpacity,
-    arrivalIntroTranslateX,
-    shouldPlayArrivalIntro,
-  ]);
 
   if (isLandscapeViewport) {
     return (
@@ -652,13 +539,6 @@ export default function KaihuuScreen() {
                     <ArchiveContent
                       embedded
                       onPressRec={switchToRecTab}
-                      onPressTranscript={() => {
-                        setToolbarTab("archive");
-                        setActiveTab("archive");
-                        setShowMainArchive(false);
-                        setArchiveSettledToMain(false);
-                        setIsTextMode(true);
-                      }}
                     />
                   ) : (
                     <View style={styles.recWrap}>
@@ -666,66 +546,6 @@ export default function KaihuuScreen() {
                         {formatDisplayDate(new Date())}
                       </Text>
 
-                      {isTextMode ? (
-                        <>
-                          <ImageBackground
-                            source={TEXT_BOARD_IMAGE}
-                            resizeMode="stretch"
-                            style={styles.paperCard}
-                          >
-                            <ScrollView
-                              style={styles.paperScroll}
-                              contentContainerStyle={styles.paperScrollContent}
-                              showsVerticalScrollIndicator={false}
-                            >
-                              <Text
-                                style={[styles.lineText, ydwStyle]}
-                                onTextLayout={(e) => {
-                                  const w =
-                                    e.nativeEvent.lines?.[0]?.width ?? 0;
-                                  if (w > 0) setLine1Width(w);
-                                }}
-                              >
-                                {transcriptLine1}
-                              </Text>
-                              <View
-                                style={[
-                                  styles.line,
-                                  { width: Math.max(1, (line1Width || 1) - 2) },
-                                ]}
-                              />
-                              <Text
-                                style={[
-                                  styles.lineText,
-                                  styles.secondLineText,
-                                  ydwStyle,
-                                ]}
-                                onTextLayout={(e) => {
-                                  const w =
-                                    e.nativeEvent.lines?.[0]?.width ?? 0;
-                                  if (w > 0) setLine2Width(w);
-                                }}
-                              >
-                                {transcriptLine2}
-                              </Text>
-                              <View
-                                style={[
-                                  styles.lineWide,
-                                  { width: Math.max(1, (line2Width || 1) - 2) },
-                                ]}
-                              />
-                            </ScrollView>
-                          </ImageBackground>
-                          <Pressable
-                            style={styles.audioModeLink}
-                            onPress={() => setIsTextMode(false)}
-                          >
-                            <Text style={styles.audioModeLinkText}>
-                              音声モードへ
-                            </Text>
-                          </Pressable>
-                        </>
-                      ) : (
                         <>
                           <View style={styles.centerArea}>
                             <Pressable
@@ -810,17 +630,8 @@ export default function KaihuuScreen() {
                               </View>
                             </View>
 
-                            <Pressable
-                              style={styles.textModeLink}
-                              onPress={() => setIsTextMode(true)}
-                            >
-                              <Text style={styles.textModeLinkText}>
-                                テキストモードへ
-                              </Text>
-                            </Pressable>
                           </View>
                         </>
-                      )}
                     </View>
                   )}
                 </View>
@@ -829,36 +640,6 @@ export default function KaihuuScreen() {
           </View>
         </SafeAreaView>
       </GestureDetector>
-      {isArrivalIntroVisible ? (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.arrivalIntroOverlay,
-            {
-              opacity: arrivalIntroOpacity,
-              transform: [{ translateX: arrivalIntroTranslateX }],
-            },
-          ]}
-        >
-          <BlurView
-            intensity={34}
-            tint="light"
-            style={styles.arrivalIntroBlur}
-          />
-          <Text style={styles.arrivalIntroDate}>
-            -{formatRecordedDate(activeCapsuleRecordedAtMs || Date.now())}-
-          </Text>
-          <Text
-            numberOfLines={1}
-            style={[
-              styles.arrivalIntroTitle,
-              zenAntiqueSoftLoaded && styles.arrivalIntroTitleZen,
-            ]}
-          >
-            {activeCapsuleTitle || "あなたのカプセル"}
-          </Text>
-        </Animated.View>
-      ) : null}
     </ImageBackground>
   );
 }
@@ -976,30 +757,6 @@ const styles = StyleSheet.create({
     zIndex: 3,
     elevation: 3,
   },
-  audioModeLink: {
-    alignSelf: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-  },
-  audioModeLinkText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#767680",
-    letterSpacing: 0.2,
-    bottom: -25,
-  },
-  textModeLink: {
-    alignSelf: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-  },
-  textModeLinkText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#767680",
-    letterSpacing: 0.2,
-    bottom: -40,
-  },
   recGuideText: {
     textAlign: "center",
     fontSize: 12,
@@ -1009,79 +766,6 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     marginBottom: 84,
   },
-  paperCard: {
-    marginTop: 56,
-    width: 312,
-    height: 449,
-    flex: 1,
-    maxHeight: 470,
-    elevation: 3,
-    paddingTop: 30,
-    paddingHorizontal: 26,
-    alignSelf: "center",
-  },
-  paperScroll: {
-    flex: 1,
-  },
-  paperScrollContent: {
-    paddingBottom: 8,
-  },
-  lineText: {
-    fontSize: 20,
-    lineHeight: 26,
-    color: "#242428",
-    letterSpacing: 0.3,
-    alignSelf: "flex-start",
-  },
-  secondLineText: {
-    marginTop: 20,
-  },
-  line: {
-    marginTop: 3,
-    width: 142,
-    height: 2,
-    backgroundColor: "#3a3a3f",
-  },
-  lineWide: {
-    marginTop: 3,
-    width: 240,
-    height: 2,
-    backgroundColor: "#3a3a3f",
-  },
-  ydwBananaslipPlus: {
-    fontFamily: "YDWbananaslipplus",
-  },
 
-  arrivalIntroOverlay: {
-    position: "absolute",
-    left: -36,
-    right: -36,
-    top: -72,
-    bottom: -72,
-    zIndex: 20,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  arrivalIntroBlur: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(252, 249, 249, 0.89)",
-  },
-  arrivalIntroDate: {
-    color: "#6f7178",
-    fontSize: 17,
-    marginBottom: 18,
-    fontWeight: "500",
-    letterSpacing: 0.4,
-  },
-  arrivalIntroTitle: {
-    color: "#111217",
-    fontSize: 40,
-    fontWeight: "700",
-    letterSpacing: 0.2,
-  },
-  arrivalIntroTitleZen: {
-    fontFamily: "ZenAntiqueSoft_400Regular",
-    fontWeight: "400",
-  },
 });
 

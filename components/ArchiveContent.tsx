@@ -30,10 +30,8 @@ type RecordingItem = {
   title: string;
   durationSec: number;
   date: string;
-  hasTranscript: boolean;
   isLocked: boolean;
   isUnopened: boolean;
-  source: "dummy" | "capsule";
   unlockAtMs?: number;
   openedAtMs?: number | null;
 };
@@ -41,7 +39,6 @@ type RecordingItem = {
 type ArchiveContentProps = {
   embedded?: boolean;
   onPressRec?: () => void;
-  onPressTranscript?: (id: string) => void;
 };
 
 const MONTHS = [
@@ -67,128 +64,6 @@ const GREEN_DOT_IMAGE = require("../assets/images/green.png");
 const CAPSULE_REFRESH_INTERVAL_MS = 1500;
 
 const LEFT_GUTTER = 18;
-const DUMMY_RECORDINGS: RecordingItem[] = [
-  {
-    id: "r1",
-    title: "project 1",
-    durationSec: 230,
-    date: "2027-01-31",
-    hasTranscript: true,
-    isLocked: false,
-    isUnopened: false,
-    source: "dummy",
-  },
-  {
-    id: "r2",
-    title: "project 1",
-    durationSec: 230,
-    date: "2027-01-31",
-    hasTranscript: true,
-    isLocked: false,
-    isUnopened: false,
-    source: "dummy",
-  },
-  {
-    id: "r3",
-    title: "project 1",
-    durationSec: 230,
-    date: "2027-01-31",
-    hasTranscript: true,
-    isLocked: false,
-    isUnopened: false,
-    source: "dummy",
-  },
-  {
-    id: "r4",
-    title: "design memo",
-    durationSec: 186,
-    date: "2025-09-16",
-    hasTranscript: false,
-    isLocked: false,
-    isUnopened: false,
-    source: "dummy",
-  },
-  {
-    id: "r5",
-    title: "morning log",
-    durationSec: 143,
-    date: "2025-09-16",
-    hasTranscript: true,
-    isLocked: false,
-    isUnopened: false,
-    source: "dummy",
-  },
-  {
-    id: "r6",
-    title: "weekly review",
-    durationSec: 301,
-    date: "2025-09-25",
-    hasTranscript: true,
-    isLocked: false,
-    isUnopened: false,
-    source: "dummy",
-  },
-  {
-    id: "r7",
-    title: "brainstorm",
-    durationSec: 208,
-    date: "2025-09-11",
-    hasTranscript: false,
-    isLocked: false,
-    isUnopened: false,
-    source: "dummy",
-  },
-  {
-    id: "r8",
-    title: "interview",
-    durationSec: 355,
-    date: "2025-09-01",
-    hasTranscript: true,
-    isLocked: false,
-    isUnopened: false,
-    source: "dummy",
-  },
-  {
-    id: "r9",
-    title: "afternoon log",
-    durationSec: 122,
-    date: "2025-08-30",
-    hasTranscript: false,
-    isLocked: false,
-    isUnopened: false,
-    source: "dummy",
-  },
-  {
-    id: "r10",
-    title: "user test",
-    durationSec: 276,
-    date: "2025-08-18",
-    hasTranscript: true,
-    isLocked: false,
-    isUnopened: false,
-    source: "dummy",
-  },
-  {
-    id: "r11",
-    title: "project 2",
-    durationSec: 264,
-    date: "2025-07-07",
-    hasTranscript: true,
-    isLocked: false,
-    isUnopened: false,
-    source: "dummy",
-  },
-  {
-    id: "r12",
-    title: "meeting",
-    durationSec: 198,
-    date: "2025-06-05",
-    hasTranscript: false,
-    isLocked: false,
-    isUnopened: false,
-    source: "dummy",
-  },
-];
 
 function toDateKey(date: Date): string {
   const y = date.getFullYear();
@@ -233,7 +108,6 @@ function createCalendarCells(year: number, monthIndex: number): Date[] {
 export default function ArchiveContent({
   embedded = false,
   onPressRec,
-  onPressTranscript,
 }: ArchiveContentProps) {
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [isInitialLoaded, setIsInitialLoaded] = useState(false);
@@ -265,55 +139,26 @@ export default function ArchiveContent({
   const [isDeleting, setIsDeleting] = useState(false);
   const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
   const openSwipeIdRef = useRef<string | null>(null);
-  const openTranscript = (item: RecordingItem) => {
-    Keyboard.dismiss();
-    if (item.isLocked) return;
-    if (item.source === "capsule") {
-      void (async () => {
-        if (item.isUnopened) {
-          await updateCapsule(item.id, { openedAtMs: Date.now() });
-          void reloadCapsules();
-        }
-        router.push({
-          pathname: "/record/kaihuu",
-          params: { mode: "text", transcriptId: item.id, capsuleId: item.id },
-        });
-      })();
-      return;
-    }
-    if (onPressTranscript) {
-      onPressTranscript(item.id);
-      return;
-    }
-    router.push({
-      pathname: "/record/kaihuu",
-      params: { mode: "text", transcriptId: item.id },
-    });
-  };
   const openCassetteScreen = (item: RecordingItem) => {
     if (item.isLocked) return;
-    if (item.source === "capsule") {
-      void (async () => {
-        if (item.isUnopened) {
-          await updateCapsule(item.id, { openedAtMs: Date.now() });
-          void reloadCapsules();
-        }
-        const shouldOpenCassetteFirst = await hardwareWS.waitUntilConnected();
-        if (shouldOpenCassetteFirst) {
-          router.push({
-            pathname: "/cassette",
-            params: { capsuleId: item.id },
-          });
-          return;
-        }
-        router.push({
-          pathname: "/record/kaihuu",
+    void (async () => {
+      if (item.isUnopened) {
+        await updateCapsule(item.id, { openedAtMs: Date.now() });
+        void reloadCapsules();
+      }
+      const shouldOpenCassetteFirst = await hardwareWS.waitUntilConnected();
+      if (shouldOpenCassetteFirst) {
+        router.navigate({
+          pathname: "/cassette",
           params: { capsuleId: item.id },
         });
-      })();
-      return;
-    }
-    router.push("/cassette");
+        return;
+      }
+      router.push({
+        pathname: "/record/kaihuu",
+        params: { capsuleId: item.id },
+      });
+    })();
   };
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
@@ -327,10 +172,8 @@ export default function ArchiveContent({
       title: item.title,
       durationSec: item.durationSec,
       date: toDateKeyFromMs(item.unlockAtMs),
-      hasTranscript: item.hasTranscript,
       isLocked: false,
       isUnopened: item.openedAtMs === null,
-      source: "capsule",
       unlockAtMs: item.unlockAtMs,
       openedAtMs: item.openedAtMs,
     }));
@@ -371,7 +214,7 @@ export default function ArchiveContent({
 
   const computedCapsuleItems = useMemo(() => {
     return capsuleItems.map((item) => {
-      if (item.source !== "capsule" || typeof item.unlockAtMs !== "number") {
+      if (typeof item.unlockAtMs !== "number") {
         return item;
       }
       return {
@@ -383,7 +226,7 @@ export default function ArchiveContent({
   }, [capsuleItems, nowMs]);
 
   const sortedLatest = useMemo(() => {
-    return [...computedCapsuleItems, ...DUMMY_RECORDINGS].sort((a, b) => {
+    return [...computedCapsuleItems].sort((a, b) => {
       if (a.date === b.date) return b.id.localeCompare(a.id);
       return b.date.localeCompare(a.date);
     });
@@ -471,7 +314,6 @@ export default function ArchiveContent({
   const confirmDeleteCapsule = useCallback(async () => {
     if (
       !confirmDeleteItem ||
-      confirmDeleteItem.source !== "capsule" ||
       isDeleting
     )
       return;
@@ -692,7 +534,7 @@ export default function ArchiveContent({
                   <Pressable
                     onPress={() => {
                       const target = selectedDateItems[0];
-                      if (!target || target.source !== "capsule") return;
+                      if (!target) return;
                       setConfirmDeleteItem(target);
                     }}
                     hitSlop={8}
@@ -701,11 +543,7 @@ export default function ArchiveContent({
                     <TrashSvg
                       width={16}
                       height={16}
-                      style={[
-                        styles.deliveryModalTrashIcon,
-                        selectedDateItems[0]?.source !== "capsule" &&
-                          styles.deliveryModalTrashIconDisabled,
-                      ]}
+                      style={styles.deliveryModalTrashIcon}
                     />
                   </Pressable>
                 </View>
@@ -732,21 +570,6 @@ export default function ArchiveContent({
                     ) : (
                       <Text style={styles.playIcon}>{">"}</Text>
                     )}
-                  </Pressable>
-                  <Pressable
-                    onPress={() => openTranscript(selectedDateItems[0])}
-                    hitSlop={6}
-                  >
-                    <Text
-                      style={[
-                        styles.transcript,
-                        (!selectedDateItems[0].hasTranscript ||
-                          selectedDateItems[0].isLocked) &&
-                          styles.transcriptDisabled,
-                      ]}
-                    >
-                      T
-                    </Text>
                   </Pressable>
                 </View>
               </View>
@@ -795,24 +618,8 @@ export default function ArchiveContent({
                 )}
               </Pressable>
 
-              <Pressable onPress={() => openTranscript(item)} hitSlop={6}>
-                <Text
-                  style={[
-                    styles.transcript,
-                    (!item.hasTranscript || item.isLocked) &&
-                      styles.transcriptDisabled,
-                  ]}
-                >
-                  T
-                </Text>
-              </Pressable>
             </View>
           );
-
-          const canSwipeDelete = item.source === "capsule";
-          if (!canSwipeDelete) {
-            return <View key={item.id}>{rowContent}</View>;
-          }
 
           return (
             <Swipeable
@@ -1227,9 +1034,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  deliveryModalTrashIconDisabled: {
-    opacity: 0.32,
-  },
   deliveryModalRow: {
     minHeight: 40,
     flexDirection: "row",
@@ -1351,16 +1155,6 @@ const styles = StyleSheet.create({
     color: "#2d2f31",
     fontSize: 10,
     marginLeft: 1,
-  },
-  transcript: {
-    width: 14,
-    textAlign: "center",
-    color: "#1d2022",
-    fontSize: 15,
-    marginLeft: 2,
-  },
-  transcriptDisabled: {
-    color: "#9a9da1",
   },
   emptyWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,

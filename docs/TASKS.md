@@ -19,11 +19,77 @@
 
 ---
 
+## 検証環境（2台構成）
+
+Mac 1台だと「チャット・Git 用の家の Wi-Fi」と「ハードの AP」を
+何度も切り替えることになるため、**Windows を Metro 専用機にする**。
+
+```
+Mac（家のWi-Fi）        Windows（_echocapsule_dev）
+  コード修正                Metro を動かす
+  git push        ──→       git pull → Metro 再起動 → iPhone で確認
+```
+
+**Windows 側ではコードを編集しない。** 動かす専用。
+`npm install` で `package-lock.json` に差分が出ても**コミットしない**こと。
+
+> ⚠️ **ブランチを切り替えたら必ず `npm install` を実行する。**
+> `package.json` が変わっていると起動時に
+> `PluginError: Failed to resolve plugin for module "..."` で止まる。
+> `npm install` にはインターネットが要るので、**家の Wi-Fi に繋いだ状態で**行うこと。
+
+### Windows のセットアップ（家の Wi-Fi に繋いだ状態で行う）
+
+```bash
+# Node.js は LTS（v20 か v22）、Git for Windows を入れておく
+git config --global core.autocrlf false   # 改行コードの自動変換を切る
+
+git clone https://github.com/inoueeeee2025/echo-capsule.git
+cd echo-capsule
+git checkout develop-hardware-tomorrow
+npm install
+
+npx expo start --offline   # 家の Wi-Fi のまま一度動作確認する
+```
+
+**先に家の Wi-Fi で動くことを確認してから AP に切り替える。**
+いきなり AP で起動すると、問題が起きたときに原因が2つに増える。
+
+### 🔴 Windows ファイアウォール
+
+**iPhone から Metro に繋がらないときは、まずここを疑う。**
+
+- 初回起動時の「Node.js のネットワークアクセスを許可しますか」で**許可する**
+- ハードの AP は Windows に**「パブリック ネットワーク」**と判定される。
+  パブリックは受信接続が既定でブロックされるため、iPhone から届かない
+
+対処はどちらか。
+
+- 設定 → ネットワークとインターネット → `_echocapsule_dev` →
+  ネットワーク プロファイルを**「プライベート」**に変更
+- コントロールパネル → Windows Defender ファイアウォール → アプリの許可 →
+  `Node.js` の**パブリック**にチェック
+
+### 起動時の確認
+
+1. `ipconfig` で IP が **`192.168.46.x`** になっているか
+2. `npx expo start --offline`
+3. Expo Go のホーム画面はオフラインだとエラー表示になるが、
+   **URL 手入力（`exp://192.168.46.x:8081`）で開ける**
+
+---
+
 ## Day 1（前半）— 実行形態の両対応を確保 ⏱ 1.5h
 
 コード変更ゼロ。設定ファイルのみ。**最も安全で、最も効果が大きい。**
 
-### A-1. マイク権限を Info.plist / AndroidManifest に入れる ⏱ 30分
+### ✅ A-1. マイク権限を Info.plist / AndroidManifest に入れる ⏱ 30分
+
+> **完了。** `app.json` の `plugins` に `expo-audio` を追加。
+> `npx expo config --type introspect` で `NSMicrophoneUsageDescription` と
+> `android.permission.RECORD_AUDIO` が入ることを確認済み。
+> iOS の `infoPlist` は mod で書き換わるため、確認には `--type prebuild` ではなく
+> **`--type introspect` を使うこと**（prebuild では反映前の値しか見えない）。
 
 `app.json` の `plugins` に `expo-audio` を追加する。現状これが無いため、
 EAS build した瞬間に **iOS は権限要求でクラッシュ、Android は録音失敗**する。
@@ -36,7 +102,13 @@ EAS build した瞬間に **iOS は権限要求でクラッシュ、Android は�
   ```
   で文言が出ること。Android 側は `android.permission.RECORD_AUDIO` が permissions に入ること。
 
-### A-2. ハードWi-Fi接続のための通信設定を入れる ⏱ 30分
+### ✅ A-2. ハードWi-Fi接続のための通信設定を入れる ⏱ 30分
+
+> **完了。** iOS は `NSAllowsLocalNetworking` と `NSLocalNetworkUsageDescription` を追加し、
+> `introspect` で反映を確認済み。
+> Android は `expo-build-properties` を導入して `usesCleartextTraffic: true` を設定。
+> ただし **Android マニフェストは `introspect` の対象外**のため、
+> 実際の反映確認はビルド時になる。
 
 平文の `ws://192.168.46.1/ws` は iOS のリリースビルドで ATS にブロックされる。
 Android も API 28 以降は平文通信が既定で拒否。加えて iOS 14+ はローカルネットワーク接続に
@@ -50,7 +122,14 @@ Android も API 28 以降は平文通信が既定で拒否。加えて iOS 14+ �
 - **完了条件**：`npx expo config --type prebuild --json` に3項目が出ること。
   実機確認は Day 5 のリハーサルで `/dev` 画面を使って行う。
 
-### A-3. 開封待ち時間を `__DEV__` から切り出す ⏱ 30分
+### ✅ A-3. 開封待ち時間を `__DEV__` から切り出す ⏱ 30分
+
+> **完了。** `src/config.ts` を新設し、`DEMO_MODE` / `DEMO_UNLOCK_DELAY_MS` /
+> `computeUnlockAtMs()` を定義。rec・cassette の両方から参照するようにした。
+> **待ち時間を変えるときは `src/config.ts` の1箇所だけ**を直せばよい。
+> `cassette.tsx` の `FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD` も `DEMO_MODE` に寄せた（D-5 の一部を先行）。
+> `scheduleLatestCapsuleRefresh` は本番の待ち時間だと `setTimeout` の上限を超えるため
+> `DEMO_MODE` のときだけ動くようにガードしてある。
 
 現状 `__DEV__ ? 30秒 : 1年` のハードコードが2箇所にあり、
 **本番ビルドすると30秒デモが一切再現できない**。実行形態が未定なので、ここは必須。
@@ -67,7 +146,7 @@ Android も API 28 以降は平文通信が既定で拒否。加えて iOS 14+ �
 
 ハードが体験の主役なので、ここが最優先。
 
-### B-1. ハードのRECボタンで録音しても保存されない ⏱ 1h 🔴
+### ✅ B-1. ハードのRECボタンで録音しても保存されない ⏱ 1h 🔴
 
 **現状、ハードで録音しても保存されず、REVIEW画面に落ちる。** デモの根幹が動いていない。
 
@@ -80,7 +159,7 @@ Android も API 28 以降は平文通信が既定で拒否。加えて iOS 14+ �
 - **完了条件**：ハードのRECを押して離すと、カセット画面に遷移し、そのカプセルが再生できること
 - **注意**：STOP↓ 側にまったく同じコードがあるので**2箇所直す**
 
-### B-2. 素早くタップすると録音が止まらなくなる ⏱ 1.5h 🔴
+### ✅ B-2. 素早くタップすると録音が止まらなくなる ⏱ 1.5h 🔴
 
 `startRecording` は権限要求と `prepareToRecordAsync` の await 後に
 `recordStatusRef.current = RECORDING` を立てる。その前に指を離すと
@@ -93,7 +172,7 @@ Android も API 28 以降は平文通信が既定で拒否。加えて iOS 14+ �
 - **完了条件**：録音ボタンを10回連続で素早くタップしても、録音が残らないこと
   （`recordStatusRef` と `recordStatus` の両方を更新するのを忘れないこと。詳細は `docs/CODEBASE.md` §6）
 
-### B-3. カセット画面の録音にも同じ修正 + 時間上限 ⏱ 1h
+### ✅ B-3. カセット画面の録音にも同じ修正 + 時間上限 ⏱ 1h
 
 `cassette.tsx` の `startCassetteRecording` / `stopCassetteRecording` に B-2 と同じ競合がある。
 加えて**録音の長さ上限がない**（rec.tsx は180秒でカット）。
@@ -118,19 +197,31 @@ B-1 の修正で `persistCurrentRecording` の依存が減るので、ついで�
 
 「スマホ単体も見せる」ので、ハードなしで完結する導線を通す。
 
-### C-1. カセット画面に見える再生ボタンを追加 ⏱ 1.5h 🔴
+### ❌ C-1. カセット画面に見える再生ボタンを追加 → **見送り**
 
-**現状、カセット画面の唯一の再生手段は `width:1, height:1, opacity:0` の不可視領域への700ms長押し。**
-ハードが繋がっていない状態では事実上再生できない。ハードが当日繋がらなかった場合の保険としても必須。
+一度実装したが、**設計判断として取り消した**（コミット a9eb773 → 取り消し）。
 
-- **対象**：`app/cassette.tsx:721-771`
-- **やること**：下部バーの back と mobile の間に再生／停止ボタンを配置。
-  既存の `handleHardwarePlaybackChange` をそのまま呼べばよい。
-  `uiScale` 係数を掛けた絶対配置になっている点に注意（詳細は `docs/CODEBASE.md` §8）
-- **完了条件**：ハード未接続でカセット画面を開き、ボタンで再生・停止できること。リールも回ること
-- **補足**：不可視の `devPlaybackToggleZone` は削除してよい
+**当初の理由（誤り）**：「カセット画面の唯一の再生手段が1×1pxの不可視領域への長押しなので、
+ハード未接続だと再生できない」
 
-### C-2. 保存に失敗しても「保管しました」と出る ⏱ 30分
+**取り消した理由**：
+- ハード未接続でも、下部バーの **mobile mode ボタンから kaihuu 画面に移れば再生できる**。
+  「再生手段がない」という前提が誤っていた
+- そもそもハード未接続時は `waitUntilConnected()` の分岐により、
+  保存後もアーカイブからも kaihuu 側に飛ぶ。**カセット画面にほとんど到達しない**
+- コンセプト上、カセットモードは物理デバイスで操作するための画面。
+  画面で操作したいならモバイルモードがある、という役割分担のほうが体験として明快
+- `saiseiButton.png` は明るいモバイル画面用の白く光沢のある画像で、
+  暗いマットな `cassetteBottomBar.png` に置くと浮く。
+  バーには "back" / "mobile mode" が印字済みで、2アクション前提のデザインでもある
+
+**残したもの**：再生位置が終端にあるとき、次に押しても無反応になる問題の修正。
+これは画面ボタンとは無関係で、**ハードの PLAY ボタンでも同じ症状が出る**ため残した。
+
+**切り分けへの影響**：「ハードは繋がっているが PLAY だけ効かない」場合は、
+モバイルモードに移って再生できるか見れば同じ切り分けができる。
+
+### ✅ C-2. 保存に失敗しても「保管しました」と出る ⏱ 30分
 
 `rec.tsx:552` は `persistCurrentRecording()` が `null`（＝保存していない）を返しても
 `setIsSaveComplete(true)` に進むため、**テープ名が空のまま「を保管しました。」という嘘の成功表示**が出る。
@@ -139,7 +230,7 @@ B-1 の修正で `persistCurrentRecording` の依存が減るので、ついで�
 - **やること**：`savedCapsuleId` が null なら失敗として扱い、成功表示を出さない
 - **完了条件**：保存に失敗するケースで成功表示が出ないこと
 
-### C-3. 無言で失敗する箇所にユーザー通知を足す ⏱ 1h
+### ✅ C-3. 無言で失敗する箇所にユーザー通知を足す ⏱ 1h
 
 `catch {}` が全ファイルで多用されており、**マイク権限を拒否すると UI 上は完全に無反応**。
 発表中に起きると原因が分からず詰む。最低限の3箇所だけ通知を出す。
@@ -154,7 +245,7 @@ B-1 の修正で `persistCurrentRecording` の依存が減るので、ついで�
 
 本流に残っているデモ用の仕掛けを外す。**知らずに他を直すと原因不明の挙動に見える**ので、まとめて片付ける。
 
-### D-1. 文字起こし機能を隠す（スコープ外化）⏱ 1h
+### ✅ D-1. 文字起こし機能を隠す（スコープ外化）⏱ 1h
 
 今回省くので、**中途半端に見えている導線を全部塞ぐ**。固定文言「こんにちはー」が
 発表で表示されるのが最悪のパターンなので、経路ごと消すのが安全。
@@ -170,7 +261,7 @@ B-1 の修正で `persistCurrentRecording` の依存が減るので、ついで�
 - **補足**：`CapsuleRecord.hasTranscript` は型に残してよいが、
   `rec.tsx:528` の `hasTranscript: true` は将来の誤解の元なので `false` にしておく
 
-### D-2. ダミー録音12件を削除 ⏱ 30分
+### ✅ D-2. ダミー録音12件を削除 ⏱ 30分
 
 `ArchiveContent.tsx:70-191` の `DUMMY_RECORDINGS` が実データと同列にソートされ、
 **2027年日付のダミーが上位に来るため、録ったばかりの実カプセルが埋もれる**。
@@ -180,7 +271,7 @@ B-1 の修正で `persistCurrentRecording` の依存が減るので、ついで�
 - **やること**：定数を削除し、`source` による分岐（`canSwipeDelete` など）を整理
 - **完了条件**：アーカイブに実データだけが並ぶこと。0件時に「No recordings found.」が出ること
 
-### D-3. 21日のカプセルを全既読化するハックを削除 ⏱ 15分
+### ✅ D-3. 21日のカプセルを全既読化するハックを削除 ⏱ 15分
 
 `kaihuu.tsx:155-169` の `openAllDay21Capsules` が、**画面を開くたびに
 「開封日が21日」のカプセルを全部既読化する**。ユーザーデータを無断で書き換えている。
@@ -188,7 +279,7 @@ B-1 の修正で `persistCurrentRecording` の依存が減るので、ついで�
 - **対象**：`app/record/kaihuu.tsx:155-169`、および `:187-192` の呼び出し
 - **完了条件**：関数ごと削除。既読状態が勝手に変わらないこと
 
-### D-4. 1日1回制限の仕様を統一 ⏱ 30分
+### ✅ D-4. 1日1回制限の仕様を統一 ⏱ 30分
 
 `rec.tsx:254` は `isLockedToday = false` で無効化されているが、
 `kaihuu.tsx:368` では**まだ有効**。画面間で仕様が矛盾している。
@@ -199,7 +290,7 @@ B-1 の修正で `persistCurrentRecording` の依存が減るので、ついで�
   `recordedDateKey` の読み書きを整理（消しすぎないよう、まず無効化だけでよい）
 - **完了条件**：連続で録音でき、どの画面でも「本日の録音は完了しました」が出ないこと
 
-### D-5. その他の残骸 ⏱ 15分
+### ✅ D-5. その他の残骸 ⏱ 15分
 
 - `app/cassette.tsx:122` / `app/record/kaihuu.tsx:138` の `shouldPlayArrivalIntro = true` 定数
 - `app/cassette.tsx:51` の `FORCE_ARRIVAL_INTRO_PREVIEW_ON_RELOAD = __DEV__`（A-3 と同じ扱いにする）
@@ -268,8 +359,28 @@ D-2 でダミーを消したあとの空状態が成立しているか確認す�
 
 - **ハードが繋がらなかった場合**：スマホ単体シナリオに切り替えられるよう、話の流れを2通り用意
 - **録音が失敗した場合**：事前に録音済みのカプセルを端末に仕込んでおく（E-2 が前提）
-- **Wi-Fi切り替えでMetroが切れる問題**：Expo Go / 開発ビルドで行くなら、
-  `rec.tsx:231-249` のプリロードが効くよう、**ハードのAPに繋ぎ替える前に全画面を一度開いておく**
+
+#### ✅ 検証済み：PC と iPhone を両方ハードの AP に繋ぐ構成は成立する
+
+`_echocapsule_dev` はインターネットに出られないが、
+**Metro との通信も WebSocket も同じ LAN 内で完結する**ため問題なく動く。
+
+```
+iPhone ──(192.168.46.x)── ハードのAP ──(192.168.46.y)── PC の Metro
+```
+
+- 起動は **`npx expo start --offline`**。既定では expo.dev に問い合わせに行くので、
+  インターネットのない環境では待たされる
+- Expo Go のホーム画面はオフラインだとエラー表示になるが、
+  **「Enter URL manually」から `exp://192.168.46.y:8081` を直接入力**すれば開く
+- **バンドルの初回転送がかなり遅い。** 小さな AP なので待つ必要がある
+
+**当日の運用**：転送が遅いので、**発表が始まる前にアプリを読み込み済みにしておく**こと。
+本番中にリロードが必要な状況を作らない。
+
+**代替（PC を持ち込まない構成）**：通常の Wi-Fi でアプリを完全に起動してから
+iPhone だけ AP に切り替える。`rec.tsx` のプリロードが効くので画面は動くが、
+**リロードすると復旧できない**。ステージ構成はシンプルになる。どちらを採るかはリハーサルで決める。
 
 ### F-4. 実行形態の最終決定 ⏱ 30分
 
@@ -277,6 +388,51 @@ A-1〜A-3 が終わっていれば、どちらでも動く。リハーサルの�
 
 - **EAS build を選ぶ場合**：ビルドに時間がかかるので**発表の2日前までに1本焼く**こと
 - **Expo Go / 開発ビルドを選ぶ場合**：Wi-Fi切り替えのリスクを F-3 の手順で回避する
+
+---
+
+## G. ペアリング画面の移植 ⏱ 2h
+
+`feature/ui-detail` ブランチ（`e323cb5`）にある、ハードの Wi-Fi 接続を案内する画面を取り込む。
+**展示では来場者が自分で接続するため価値が高い。**
+
+### ⚠️ マージ・cherry-pick してはいけない
+
+このブランチは `c673443` から分岐している。**`src/hardware/ws.ts` が生まれる前**
+（`5d7d011 ハードウェア接続`）の地点なので、当時は共有の WS クライアントが無く、
+`rec.tsx` の中に WebSocket 実装が丸ごと書かれている。
+
+そのまま統合すると **同じデバイスに WebSocket が2本張られる**。
+
+- ボタンを1回押すと両方が反応し、録音が二重に走る
+- ファーム側は `cleanupClients()` が無いため（`docs/HARDWARE.md` F-2）、接続増加で悪化する
+- 再接続ロジックが2系統独立して走る
+
+### 移植するもの / 捨てるもの
+
+| 対象 | 判断 |
+|---|---|
+| `assets/images/cassetteButton.svg` / `smartphoneBack.svg` | ✅ そのままコピー |
+| ペアリング促し UI（カセットのめくりアニメーション） | ✅ 移植 |
+| `openWifiSettings()` — iOS/Android の Wi-Fi 設定を開く | ✅ 移植 |
+| `isHardwareWifiConnected` の状態表示 | ✅ ただし `hardwareWS.subscribeConnection()` に繋ぎ替える |
+| 接続後に自動でカセットモードへ遷移 | ✅ 移植 |
+| `HARDWARE_WS_URL` / `hardwareWsRef` / `scheduleReconnect()` | ❌ 捨てる。`hardwareWS` に統合済み |
+| `resolveHardwareButtonsFromMessage()` 等のパーサ | ❌ 捨てる。`ws.ts` が担当 |
+| `DeviceEventEmitter` によるボタン配送 | ❌ 捨てる。同一ファイル内で emit/listen しているだけの遠回り |
+| `handleHardwareRecPress()` 等のボタンハンドラ | ❌ 捨てる。`stopAndSaveFromHardware()` に集約済み |
+
+### 手順
+
+1. SVG 2点をコピー
+2. ペアリング UI の JSX とスタイルを移植
+3. `openWifiSettings()` を移植
+4. `isHardwareWifiConnected` を `hardwareWS.subscribeConnection()` から供給する
+5. 接続後の自動遷移とスワイプ連携を繋ぐ
+
+- **完了条件**：ハード未接続時にペアリング案内が出て、Wi-Fi 設定を開ける。
+  接続すると案内が消えてカセットモードに進める。**WebSocket が1本しか張られない**
+- **確認方法**：`/dev` 画面の「再接続試行回数」が不自然に増えないこと
 
 ---
 
@@ -312,15 +468,15 @@ A-1〜A-3 が終わっていれば、どちらでも動く。リハーサルの�
 ## 進捗チェックリスト
 
 ```
-Day 1  [ ] A-1 マイク権限         [ ] A-2 通信設定        [ ] A-3 待ち時間の切り出し
+Day 1  [x] A-1 マイク権限         [x] A-2 通信設定        [x] A-3 待ち時間の切り出し
        [ ] B-1 ハード録音の保存バグ 🔴
 
-Day 2  [ ] B-2 録音の競合状態 🔴   [ ] B-3 カセット側の競合+上限
-       [ ] B-4 WS購読の張り直し   [ ] C-1 再生ボタン追加 🔴
+Day 2  [x] B-2 録音の競合状態 🔴   [x] B-3 カセット側の競合+上限
+       [ ] B-4 WS購読の張り直し   [—] C-1 再生ボタン追加 → 見送り
 
-Day 3  [ ] C-2 嘘の成功表示       [ ] C-3 失敗時の通知
-       [ ] D-1 文字起こしを隠す   [ ] D-2 ダミー削除     [ ] D-3 21日ハック削除
-       [ ] D-4 1日1回制限の統一   [ ] D-5 その他残骸
+Day 3  [x] C-2 嘘の成功表示       [x] C-3 失敗時の通知
+       [x] D-1 文字起こしを隠す   [x] D-2 ダミー削除     [x] D-3 21日ハック削除
+       [x] D-4 1日1回制限の統一   [x] D-5 その他残骸
 
 Day 4  [ ] E-1 待ち時間の調整     [ ] E-2 音声の永続化   [ ] E-3 WSログ抑制
        [ ] E-4 空状態の確認
@@ -328,5 +484,7 @@ Day 4  [ ] E-1 待ち時間の調整     [ ] E-2 音声の永続化   [ ] E-3 WS
 Day 5  [ ] F-1 3経路の実機通し    [ ] F-2 /dev 手順確立
        [ ] F-3 当日の保険         [ ] F-4 実行形態の決定
 ```
+
+後から追加  [ ] G ペアリング画面の移植（展示用・2h）
 
 🔴 = これが落ちると発表が成立しない
