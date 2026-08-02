@@ -111,11 +111,6 @@ class EchoCapsuleWS {
     this.ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data) as HardwareState;
-        // ボタンの配線とラベルの対応を確かめるための一時的なログ。
-        // どの画面にいても出る。確認が済んだら消す。
-        console.log(
-          `[HW] btn stop=${data.stop} play=${data.play} rec=${data.rec}`,
-        );
         this.lastState = data;
         this.lastMessageAt = Date.now();
         this.emitStatus();

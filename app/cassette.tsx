@@ -279,14 +279,6 @@ export default function CassetteScreen() {
       setIsPlaying(false);
       return;
     }
-    // 再生位置が進んでいるかを見る。進んでいるのに聞こえないなら
-    // 出口（消音スイッチ・音量）側の問題になる。
-    if (status.playing) {
-      console.log(
-        `[CAS] status playing=${status.playing}` +
-          ` t=${status.currentTime?.toFixed(1)}/${status.duration?.toFixed(1)}`,
-      );
-    }
     setIsPlaying(status.playing);
   }, []);
 
@@ -377,7 +369,6 @@ export default function CassetteScreen() {
    * REC の準備が終わる前にボタンが離された場合に使う。
    */
   const abortCassetteRecording = useCallback(async () => {
-    console.log("[CAS] 録音を畳む（短すぎる・押し損ね）");
     clearMaxRecordingTimeout();
     const recording = recordingRef.current;
     recordingRef.current = null;
@@ -403,7 +394,6 @@ export default function CassetteScreen() {
     if (!recording) {
       // ここを通ると録音中フラグが降りないまま残る。
       // 次の録音が門前払いされる原因になりうるので、必ず降ろしておく。
-      console.log("[CAS] 停止しようとしたが、録音が動いていなかった");
       isHardwareRecordingRef.current = false;
       setIsCassetteRecording(false);
       return null;
@@ -417,7 +407,6 @@ export default function CassetteScreen() {
       });
       const uri = recording.getStatus().url;
       if (!uri) {
-        console.log("[CAS] stop: url が空だった");
         return null;
       }
 
@@ -425,7 +414,6 @@ export default function CassetteScreen() {
       const elapsedMs = Date.now() - recordingStartRef.current;
 
       if (elapsedMs < MIN_RECORDING_MS) {
-        console.log(`[CAS] 短すぎるので破棄 ${elapsedMs}ms uri=${uri}`);
         setNotice({ title: "短すぎました", caption: "もう一度録音してください" });
         return null;
       }
@@ -433,7 +421,6 @@ export default function CassetteScreen() {
       const durationSec = Math.max(1, Math.round(elapsedMs / 1000));
 
       // ここでは保存しない。聞き直して決めてもらうため、いったん預かる。
-      console.log(`[CAS] recorded ${durationSec}s (${elapsedMs}ms) uri=${uri}`);
       setPendingRecording({ uri, recordedAtMs, durationSec });
       return uri;
     } catch (error) {
@@ -472,20 +459,17 @@ export default function CassetteScreen() {
   }, [pendingRecording, unloadSound]);
 
   const startCassetteRecording = useCallback(async () => {
-    // 無言で抜けると「押しても何も起きない」に見えてしまうので、
-    // 抜けた理由を必ず残す。
+    // 前の録音がまだ畳まれていないうちに始めると、
+    // 停止処理が二重に走って録音中フラグが残る。
     if (isHardwareRecordingRef.current) {
-      console.log("[CAS] 録音を開始できない: 前の録音がまだ終わっていない扱い");
       return;
     }
 
     try {
       const { granted } = await requestRecordingPermissionsAsync();
       if (!granted) {
-        console.log("[CAS] 録音を開始できない: マイクの許可がない");
         return;
       }
-      console.log("[CAS] 録音を開始する");
 
       await unloadSound();
       shouldPlayFromHardwareRef.current = false;
@@ -624,7 +608,6 @@ export default function CassetteScreen() {
 
   // ハードの PLAY / STOP ボタンから呼ばれる再生・停止の入口。
   const handleHardwarePlaybackChange = useCallback((next: boolean) => {
-    console.log(`[CAS] play=${next} player=${playerRef.current ? "あり" : "なし"}`);
     shouldPlayFromHardwareRef.current = next;
     const player = playerRef.current;
     if (!player) {
@@ -684,12 +667,6 @@ export default function CassetteScreen() {
 
     const unsub = hardwareWS.subscribe((s) => {
       const prev = prevHardwareStateRef.current;
-      console.log(
-        `[CAS] btn stop=${s.stop} play=${s.play} rec=${s.rec}` +
-          ` | recording=${isHardwareRecordingRef.current}` +
-          ` pressed=${isRecPressedRef.current}` +
-          ` reviewing=${isReviewingRef.current}`,
-      );
       const playDown = s.play && !prev.play;
       const recDown = s.rec && !prev.rec;
       const recUp = !s.rec && prev.rec;
@@ -943,7 +920,6 @@ export default function CassetteScreen() {
           player.remove();
           return;
         }
-        console.log(`[CAS] player ready uri=${activeAudioUri}`);
         playerRef.current = player;
         playbackSubscriptionRef.current = sub;
         onPlaybackStatusUpdate(player.currentStatus);
